@@ -1,0 +1,49 @@
+@baseUrl = http://localhost:8080
+@accessToken = replace-after-login
+@refreshToken = replace-after-login
+@invitationCode = copy-from-mailpit
+
+### API readiness
+GET {{baseUrl}}/health/ready
+
+### Swagger document
+GET {{baseUrl}}/swagger/v1/swagger.json
+
+### Login
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "correct horse battery staple",
+  "client": {
+    "type": "swagger",
+    "version": "1.0"
+  }
+}
+
+### Refresh (the old refresh token becomes invalid immediately)
+POST {{baseUrl}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Current profile
+GET {{baseUrl}}/api/v1/me
+Authorization: Bearer {{accessToken}}
+
+### Create an offline Revit grant
+POST {{baseUrl}}/api/v1/plugin/grants
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "product": "revit",
+  "pluginVersion": "2026.1.0",
+  "installationId": "0f09e7a2-d292-4d3e-96be-4e7b193ce879"
+}
+
+### Public signing keys
+GET {{baseUrl}}/.well-known/jwks.json

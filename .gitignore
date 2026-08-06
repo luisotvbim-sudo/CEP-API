@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+.vs/
+.vscode/
+.idea/
+TestResults/
+coverage/
+artifacts/
+.local/
+*.user
+*.suo
+*.pfx
+*.pem
+*.key
+.env
+appsettings.Local.json

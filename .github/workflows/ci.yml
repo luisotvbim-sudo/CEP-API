@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore tools and packages
+        run: |
+          dotnet tool restore
+          dotnet restore CEP-API.sln
+      - name: Build
+        run: dotnet build CEP-API.sln -c Release --no-restore -m:1
+      - name: Unit tests
+        run: dotnet test tests/CepApi.UnitTests/CepApi.UnitTests.csproj -c Release --no-build --no-restore
+      - name: PostgreSQL integration tests
+        run: dotnet test tests/CepApi.IntegrationTests/CepApi.IntegrationTests.csproj -c Release --no-build --no-restore
+      - name: Validate idempotent migration script
+        run: |
+          mkdir -p artifacts
+          dotnet ef migrations script --idempotent --no-build \
+            --project src/CepApi.Infrastructure/CepApi.Infrastructure.csproj \
+            --startup-project src/CepApi.Api/CepApi.Api.csproj \
+            --output artifacts/migrations.sql
+      - uses: actions/upload-artifact@v4
+        with:
+          name: migrations
+          path: artifacts/migrations.sql

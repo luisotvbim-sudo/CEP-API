@@ -1,0 +1,38 @@
+using CepApi.Domain;
+using System.ComponentModel.DataAnnotations;
+
+namespace CepApi.Application;
+
+public sealed record ClientInfo(string Type = "unknown", string? Version = null, string? InstallationId = null);
+public sealed record LoginRequest([property: Required, EmailAddress, MaxLength(320)] string Email, [property: Required, MaxLength(200)] string Password, ClientInfo? Client);
+public sealed record RefreshRequest([property: Required, MaxLength(1000)] string RefreshToken);
+public sealed record LogoutRequest([property: Required, MaxLength(1000)] string RefreshToken);
+public sealed record TokenResponse(string AccessToken, DateTimeOffset AccessTokenExpiresAt, string RefreshToken, DateTimeOffset RefreshTokenExpiresAt, UserResponse User);
+public sealed record AcceptInvitationRequest(
+    [property: Required, EmailAddress, MaxLength(320)] string Email,
+    [property: Required, MaxLength(50)] string Code,
+    [property: Required, MaxLength(200)] string DisplayName,
+    [property: Required, MinLength(12), MaxLength(200)] string Password,
+    ClientInfo? Client);
+public sealed record ForgotPasswordRequest([property: Required, EmailAddress, MaxLength(320)] string Email);
+public sealed record ResetPasswordRequest([property: Required, EmailAddress, MaxLength(320)] string Email,
+    [property: Required, MaxLength(50)] string Code, [property: Required, MinLength(12), MaxLength(200)] string NewPassword);
+public sealed record ChangePasswordRequest([property: Required, MaxLength(200)] string CurrentPassword,
+    [property: Required, MinLength(12), MaxLength(200)] string NewPassword);
+public sealed record UpdateProfileRequest([property: Required, MaxLength(200)] string DisplayName);
+public sealed record CreatePluginGrantRequest(Product Product, [property: Required, MaxLength(50)] string PluginVersion,
+    [property: Required, MaxLength(200)] string InstallationId);
+public sealed record PluginGrantResponse(string GrantToken, DateTimeOffset ExpiresAt);
+
+public sealed record UserResponse(Guid Id, string DisplayName, string Email, Guid? OrganizationId, UserRole Role, UserStatus Status, IReadOnlyCollection<Product> Products);
+public sealed record SessionResponse(Guid Id, string ClientType, string? ClientVersion, string? InstallationId, string? IpAddress, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, DateTimeOffset? LastUsedAt);
+
+public sealed record CreateOrganizationRequest([property: Required, MaxLength(200)] string Name,
+    [property: Required, MaxLength(100)] string Slug,
+    [property: Required, EmailAddress, MaxLength(320)] string InitialAdminEmail, IReadOnlyCollection<Product>? Products);
+public sealed record ChangeOrganizationStatusRequest(OrganizationStatus Status);
+public sealed record OrganizationResponse(Guid Id, string Name, string Slug, OrganizationStatus Status, DateTimeOffset CreatedAt);
+public sealed record InviteUserRequest([property: Required, EmailAddress, MaxLength(320)] string Email, UserRole Role, IReadOnlyCollection<Product>? Products);
+public sealed record UpdateUserRequest([property: MaxLength(200)] string? DisplayName, UserRole Role, UserStatus Status, IReadOnlyCollection<Product>? Products);
+public sealed record InvitationResponse(Guid Id, string Email, UserRole Role, bool CanUseRevit, bool CanUseZwcad, DateTimeOffset ExpiresAt, DateTimeOffset? AcceptedAt, DateTimeOffset? RevokedAt);
+public sealed record PagedResponse<T>(IReadOnlyCollection<T> Items, int Page, int PageSize, long Total);

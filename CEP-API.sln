@@ -1,0 +1,49 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CepApi.Domain", "src\CepApi.Domain\CepApi.Domain.csproj", "{A10DAF4A-E68B-4B2B-8863-A50EF0C1B645}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CepApi.Application", "src\CepApi.Application\CepApi.Application.csproj", "{32C31A26-6B82-4283-91B7-49128065D15A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CepApi.Infrastructure", "src\CepApi.Infrastructure\CepApi.Infrastructure.csproj", "{59D161D5-F64D-43E3-9249-B24F305AFFEB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CepApi.Api", "src\CepApi.Api\CepApi.Api.csproj", "{40F8A3F3-7A1C-4747-8858-161718338A73}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CepApi.UnitTests", "tests\CepApi.UnitTests\CepApi.UnitTests.csproj", "{7B1C3B46-58C9-4051-9028-E49859CD63D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CepApi.IntegrationTests", "tests\CepApi.IntegrationTests\CepApi.IntegrationTests.csproj", "{136857C7-3DB2-44B7-ABFE-E359EDE2A889}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A10DAF4A-E68B-4B2B-8863-A50EF0C1B645}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A10DAF4A-E68B-4B2B-8863-A50EF0C1B645}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A10DAF4A-E68B-4B2B-8863-A50EF0C1B645}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A10DAF4A-E68B-4B2B-8863-A50EF0C1B645}.Release|Any CPU.Build.0 = Release|Any CPU
+		{32C31A26-6B82-4283-91B7-49128065D15A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{32C31A26-6B82-4283-91B7-49128065D15A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{32C31A26-6B82-4283-91B7-49128065D15A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{32C31A26-6B82-4283-91B7-49128065D15A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{59D161D5-F64D-43E3-9249-B24F305AFFEB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{59D161D5-F64D-43E3-9249-B24F305AFFEB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{59D161D5-F64D-43E3-9249-B24F305AFFEB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{59D161D5-F64D-43E3-9249-B24F305AFFEB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{40F8A3F3-7A1C-4747-8858-161718338A73}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{40F8A3F3-7A1C-4747-8858-161718338A73}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{40F8A3F3-7A1C-4747-8858-161718338A73}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{40F8A3F3-7A1C-4747-8858-161718338A73}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7B1C3B46-58C9-4051-9028-E49859CD63D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7B1C3B46-58C9-4051-9028-E49859CD63D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7B1C3B46-58C9-4051-9028-E49859CD63D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7B1C3B46-58C9-4051-9028-E49859CD63D5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{136857C7-3DB2-44B7-ABFE-E359EDE2A889}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{136857C7-3DB2-44B7-ABFE-E359EDE2A889}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{136857C7-3DB2-44B7-ABFE-E359EDE2A889}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{136857C7-3DB2-44B7-ABFE-E359EDE2A889}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
