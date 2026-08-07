@@ -2,6 +2,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Identity;
@@ -18,6 +20,11 @@ namespace CepApi.IntegrationTests;
 
 public sealed class ApiWorkflowTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+    };
+
     [Fact]
     public async Task Complete_invitation_login_and_product_grant_workflow_is_isolated_and_signed()
     {
@@ -66,7 +73,7 @@ public sealed class ApiWorkflowTests
         var acceptAdmin = await client.PostAsJsonAsync("/api/v1/auth/invitations/accept", new AcceptInvitationRequest(
             "admin@acme.test", adminCode, "Acme Admin", "correct horse battery staple", new ClientInfo("test")), cancellationToken);
         acceptAdmin.EnsureSuccessStatusCode();
-        var adminTokens = (await acceptAdmin.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken))!;
+        var adminTokens = (await acceptAdmin.Content.ReadFromJsonAsync<TokenResponse>(JsonOptions, cancellationToken))!;
 
         UseToken(client, adminTokens.AccessToken);
         var inviteUser = await client.PostAsJsonAsync("/api/v1/organization/invitations", new InviteUserRequest(
@@ -78,13 +85,13 @@ public sealed class ApiWorkflowTests
             "user@acme.test", email.InvitationCodes["user@acme.test"], "Plugin User",
             "correct horse battery staple", new ClientInfo("revit", "2026.1", "install-1")), cancellationToken);
         acceptUser.EnsureSuccessStatusCode();
-        var userTokens = (await acceptUser.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken))!;
+        var userTokens = (await acceptUser.Content.ReadFromJsonAsync<TokenResponse>(JsonOptions, cancellationToken))!;
         UseToken(client, userTokens.AccessToken);
 
         var revitGrantResponse = await client.PostAsJsonAsync("/api/v1/plugin/grants",
             new CreatePluginGrantRequest(Product.Revit, "2026.1", "install-1"), cancellationToken);
         revitGrantResponse.EnsureSuccessStatusCode();
-        var revitGrant = (await revitGrantResponse.Content.ReadFromJsonAsync<PluginGrantResponse>(cancellationToken))!;
+        var revitGrant = (await revitGrantResponse.Content.ReadFromJsonAsync<PluginGrantResponse>(JsonOptions, cancellationToken))!;
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(revitGrant.GrantToken);
         Assert.Equal("revit", jwt.Claims.Single(x => x.Type == "product").Value);
         Assert.Equal(TimeSpan.FromHours(72), revitGrant.ExpiresAt - new DateTimeOffset(jwt.ValidFrom, TimeSpan.Zero));
@@ -101,13 +108,13 @@ public sealed class ApiWorkflowTests
         ]);
         var telemetryResponse = await client.PostAsJsonAsync("/api/v1/plugin/telemetry/events", telemetryBatch, cancellationToken);
         telemetryResponse.EnsureSuccessStatusCode();
-        var telemetryResult = (await telemetryResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(cancellationToken))!;
+        var telemetryResult = (await telemetryResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(JsonOptions, cancellationToken))!;
         Assert.Equal(1, telemetryResult.Accepted);
         Assert.Equal(0, telemetryResult.Duplicates);
 
         var duplicateResponse = await client.PostAsJsonAsync("/api/v1/plugin/telemetry/events", telemetryBatch, cancellationToken);
         duplicateResponse.EnsureSuccessStatusCode();
-        var duplicateResult = (await duplicateResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(cancellationToken))!;
+        var duplicateResult = (await duplicateResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(JsonOptions, cancellationToken))!;
         Assert.Equal(0, duplicateResult.Accepted);
         Assert.Equal(1, duplicateResult.Duplicates);
 
@@ -115,7 +122,7 @@ public sealed class ApiWorkflowTests
         var summaryResponse = await client.GetAsync(
             "/api/v1/organization/telemetry/summary?product=revit&command=export.ifc", cancellationToken);
         summaryResponse.EnsureSuccessStatusCode();
-        var summary = (await summaryResponse.Content.ReadFromJsonAsync<PluginTelemetrySummaryResponse>(cancellationToken))!;
+        var summary = (await summaryResponse.Content.ReadFromJsonAsync<PluginTelemetrySummaryResponse>(JsonOptions, cancellationToken))!;
         Assert.Equal(1, summary.TotalEvents);
         Assert.Equal(1, summary.UniqueUsers);
         Assert.Equal(1, summary.Succeeded);
@@ -157,7 +164,7 @@ public sealed class ApiWorkflowTests
     {
         var response = await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, password, new ClientInfo("test")), cancellationToken);
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken))!;
+        return (await response.Content.ReadFromJsonAsync<TokenResponse>(JsonOptions, cancellationToken))!;
     }
 
     private static void UseToken(HttpClient client, string token)
