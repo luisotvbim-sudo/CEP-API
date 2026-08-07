@@ -15,6 +15,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<PluginUsageEvent> PluginUsageEvents => Set<PluginUsageEvent>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -93,6 +94,24 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.IpAddress).HasMaxLength(64);
             entity.HasIndex(x => new { x.OrganizationId, x.CreatedAt });
             entity.HasIndex(x => x.CreatedAt);
+        });
+
+        builder.Entity<PluginUsageEvent>(entity =>
+        {
+            entity.ToTable("plugin_usage_events");
+            entity.Property(x => x.Product).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.Command).HasMaxLength(100);
+            entity.Property(x => x.Outcome).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.ErrorCode).HasMaxLength(100);
+            entity.Property(x => x.PluginVersion).HasMaxLength(50);
+            entity.Property(x => x.HostVersion).HasMaxLength(50);
+            entity.Property(x => x.InstallationId).HasMaxLength(200);
+            entity.HasIndex(x => new { x.OrganizationId, x.ClientEventId }).IsUnique();
+            entity.HasIndex(x => new { x.OrganizationId, x.OccurredAt });
+            entity.HasIndex(x => new { x.OrganizationId, x.UserId, x.OccurredAt });
+            entity.HasIndex(x => new { x.OrganizationId, x.Product, x.Command, x.OccurredAt });
+            entity.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

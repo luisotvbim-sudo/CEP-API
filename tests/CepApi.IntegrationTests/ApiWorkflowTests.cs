@@ -93,6 +93,34 @@ public sealed class ApiWorkflowTests
             new CreatePluginGrantRequest(Product.Zwcad, "2026.1", "install-1"), cancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
 
+        var telemetryEventId = Guid.NewGuid();
+        var telemetryBatch = new CreatePluginTelemetryBatchRequest(Product.Revit, "2026.1", "2026", "install-1",
+        [
+            new PluginTelemetryEventRequest(telemetryEventId, "export.ifc", DateTimeOffset.UtcNow.AddMinutes(-1),
+                1850, PluginUsageOutcome.Succeeded, null)
+        ]);
+        var telemetryResponse = await client.PostAsJsonAsync("/api/v1/plugin/telemetry/events", telemetryBatch, cancellationToken);
+        telemetryResponse.EnsureSuccessStatusCode();
+        var telemetryResult = (await telemetryResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(cancellationToken))!;
+        Assert.Equal(1, telemetryResult.Accepted);
+        Assert.Equal(0, telemetryResult.Duplicates);
+
+        var duplicateResponse = await client.PostAsJsonAsync("/api/v1/plugin/telemetry/events", telemetryBatch, cancellationToken);
+        duplicateResponse.EnsureSuccessStatusCode();
+        var duplicateResult = (await duplicateResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(cancellationToken))!;
+        Assert.Equal(0, duplicateResult.Accepted);
+        Assert.Equal(1, duplicateResult.Duplicates);
+
+        UseToken(client, adminTokens.AccessToken);
+        var summaryResponse = await client.GetAsync(
+            "/api/v1/organization/telemetry/summary?product=revit&command=export.ifc", cancellationToken);
+        summaryResponse.EnsureSuccessStatusCode();
+        var summary = (await summaryResponse.Content.ReadFromJsonAsync<PluginTelemetrySummaryResponse>(cancellationToken))!;
+        Assert.Equal(1, summary.TotalEvents);
+        Assert.Equal(1, summary.UniqueUsers);
+        Assert.Equal(1, summary.Succeeded);
+        Assert.Equal("export.ifc", Assert.Single(summary.Commands).Command);
+
         var jwks = await client.GetAsync("/.well-known/jwks.json", cancellationToken);
         jwks.EnsureSuccessStatusCode();
         Assert.Contains("development-key", await jwks.Content.ReadAsStringAsync(cancellationToken), StringComparison.Ordinal);
