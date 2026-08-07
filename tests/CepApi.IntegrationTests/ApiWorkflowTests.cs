@@ -94,7 +94,9 @@ public sealed class ApiWorkflowTests
         var revitGrant = (await revitGrantResponse.Content.ReadFromJsonAsync<PluginGrantResponse>(JsonOptions, cancellationToken))!;
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(revitGrant.GrantToken);
         Assert.Equal("revit", jwt.Claims.Single(x => x.Type == "product").Value);
-        Assert.Equal(TimeSpan.FromHours(72), revitGrant.ExpiresAt - new DateTimeOffset(jwt.ValidFrom, TimeSpan.Zero));
+        Assert.Equal(TimeSpan.FromHours(72), jwt.ValidTo - jwt.ValidFrom);
+        Assert.InRange(revitGrant.ExpiresAt - new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero),
+            TimeSpan.Zero, TimeSpan.FromSeconds(1));
 
         var denied = await client.PostAsJsonAsync("/api/v1/plugin/grants",
             new CreatePluginGrantRequest(Product.Zwcad, "2026.1", "install-1"), cancellationToken);
