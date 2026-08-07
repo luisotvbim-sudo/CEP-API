@@ -29,7 +29,7 @@ jobs:
       - name: Validate idempotent migration script
         run: |
           mkdir -p artifacts
-          dotnet ef migrations script --idempotent --no-build \
+          dotnet ef migrations script --idempotent --no-build --configuration Release \
             --project src/CepApi.Infrastructure/CepApi.Infrastructure.csproj \
             --startup-project src/CepApi.Api/CepApi.Api.csproj \
             --output artifacts/migrations.sql
