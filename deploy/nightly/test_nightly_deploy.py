@@ -7,6 +7,18 @@ import nightly_deploy as deploy
 
 
 class NightlyTests(unittest.TestCase):
+    def test_public_health_requires_200_and_healthy_response(self):
+        with patch.object(deploy.urllib.request, 'urlopen') as opened, patch.object(deploy.time, 'sleep'):
+            response = opened.return_value.__enter__.return_value
+            response.status = 503
+            response.read.return_value = b'Healthy'
+            with self.assertRaises(deploy.DeployError):
+                deploy.verify_health()
+            response.status = 200
+            response.read.return_value = b'Healthy'
+            deploy.verify_health()
+            self.assertEqual('CEP-API-nightly-deployment', opened.call_args.args[0].get_header('User-agent'))
+
     def test_only_0200_to_0300_sao_paulo_is_allowed(self):
         for utc_hour, minute, expected in [(4, 59, False), (5, 0, True), (5, 59, True), (6, 0, False), (15, 0, False)]:
             now = dt.datetime(2026, 9, 12, utc_hour, minute, tzinfo=dt.timezone.utc)

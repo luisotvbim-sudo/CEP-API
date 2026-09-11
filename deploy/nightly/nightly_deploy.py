@@ -99,9 +99,11 @@ def compose(*args, timeout=180):
 
 
 def verify_health():
+    request = urllib.request.Request(URL + '/health/ready', headers={
+        'User-Agent': 'CEP-API-nightly-deployment', 'Accept': 'text/plain'})
     for _ in range(12):
         try:
-            with urllib.request.urlopen(URL + '/health/ready', timeout=5) as response:
+            with urllib.request.urlopen(request, timeout=5) as response:
                 if response.status == 200 and response.read().strip() == b'Healthy':
                     return
         except (OSError, urllib.error.URLError):
