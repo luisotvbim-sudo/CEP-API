@@ -17,6 +17,9 @@ public sealed class JwtKeyRing : IDisposable
         if (!string.IsNullOrWhiteSpace(settings.PrivateKeyPem))
         {
             activeRsa.ImportFromPem(NormalizePem(settings.PrivateKeyPem));
+            if (activeRsa.KeySize < 2048)
+                throw new InvalidOperationException("JWT signing requires RSA with at least 2048 bits.");
+            _ = activeRsa.ExportParameters(true); // Reject public-only PEMs at startup.
         }
         else
         {

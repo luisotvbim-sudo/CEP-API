@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: cep_api
       POSTGRES_PASSWORD: cep_api_dev
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - cep_api_postgres:/var/lib/postgresql/data
     healthcheck:
@@ -18,8 +18,8 @@ services:
   mailpit:
     image: axllent/mailpit:latest
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
   migrate:
     build:
@@ -31,6 +31,7 @@ services:
       Email__Host: mailpit
       Email__Port: 1025
       Email__UseSsl: "false"
+      Email__AllowInsecureTransport: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,7 +41,7 @@ services:
       context: .
     environment: *api-environment
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully

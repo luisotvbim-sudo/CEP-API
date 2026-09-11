@@ -15,7 +15,7 @@ public sealed class OrganizationUsersController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
     ISecurityCodeService codeService,
-    IEmailSender emailSender,
+    IEmailQueue emailQueue,
     IClock clock,
     IAuditService audit) : ApiControllerBase
 {
@@ -74,8 +74,7 @@ public sealed class OrganizationUsersController(
             CreatedByUserId = CurrentUserId
         };
         db.Invitations.Add(invitation);
-        await db.SaveChangesAsync(cancellationToken);
-        await emailSender.SendInvitationAsync(request.Email.Trim(), organization.Name, code, invitation.ExpiresAt, cancellationToken);
+        emailQueue.Invitation(request.Email.Trim(), organization.Name, code, invitation.ExpiresAt);
         await audit.WriteAsync("invitation.created", organizationId, CurrentUserId, details: new { invitation.Id, invitation.Email, role = request.Role.ToString() }, ipAddress: IpAddress, cancellationToken: cancellationToken);
         return CreatedAtAction(nameof(ListInvitations), ToResponse(invitation));
     }
@@ -103,8 +102,7 @@ public sealed class OrganizationUsersController(
         invitation.CodeHash = codeService.Hash(code);
         invitation.ExpiresAt = clock.UtcNow.AddHours(48);
         invitation.FailedAttempts = 0;
-        await db.SaveChangesAsync(cancellationToken);
-        await emailSender.SendInvitationAsync(invitation.Email, invitation.Organization.Name, code, invitation.ExpiresAt, cancellationToken);
+        emailQueue.Invitation(invitation.Email, invitation.Organization.Name, code, invitation.ExpiresAt);
         await audit.WriteAsync("invitation.resent", organizationId, CurrentUserId,
             details: new { invitation.Id }, ipAddress: IpAddress, cancellationToken: cancellationToken);
         return NoContent();
@@ -132,6 +130,10 @@ public sealed class OrganizationUsersController(
         if (request.Role is UserRole.SystemAdmin)
             return ApiProblem(StatusCodes.Status400BadRequest, "SystemAdmin cannot be assigned inside an organization.", "invalid_role");
         var organizationId = RequireOrganizationId();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        // Serialize the last-administrator check for the organization, then account changes.
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT \"Id\" FROM organizations WHERE \"Id\" = {organizationId} FOR UPDATE", cancellationToken);
+        await db.LockUserAsync(userId, cancellationToken);
         var user = await db.Users.Include(x => x.ProductAccesses)
             .SingleOrDefaultAsync(x => x.Id == userId && x.OrganizationId == organizationId, cancellationToken);
         if (user is null) return ApiProblem(StatusCodes.Status404NotFound, "User not found.", "user_not_found");
@@ -166,6 +168,7 @@ public sealed class OrganizationUsersController(
 
         if (securityChanged)
         {
+            user.SecurityStamp = Guid.NewGuid().ToString();
             var sessions = await db.RefreshSessions.Where(x => x.UserId == user.Id && x.RevokedAt == null).ToListAsync(cancellationToken);
             foreach (var session in sessions)
             {
@@ -178,6 +181,7 @@ public sealed class OrganizationUsersController(
         await audit.WriteAsync("user.updated", organizationId, CurrentUserId, user.Id,
             new { role = user.Role.ToString(), status = user.Status.ToString(), products = user.ProductAccesses.Select(x => x.Product.ToString()) },
             IpAddress, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Ok(ToResponse(user));
     }
 

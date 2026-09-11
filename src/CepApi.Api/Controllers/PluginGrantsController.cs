@@ -3,6 +3,7 @@ using CepApi.Domain;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace CepApi.Api.Controllers;
@@ -12,6 +13,7 @@ namespace CepApi.Api.Controllers;
 public sealed class PluginGrantsController(AppDbContext db, ITokenService tokenService, IClock clock, IAuditService audit) : ApiControllerBase
 {
     [HttpPost]
+    [EnableRateLimiting("account")]
     public async Task<ActionResult<PluginGrantResponse>> Create(CreatePluginGrantRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.PluginVersion) || string.IsNullOrWhiteSpace(request.InstallationId))

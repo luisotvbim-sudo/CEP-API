@@ -14,6 +14,8 @@ API multiempresa para administrar usuários dos plugins Revit e ZWCAD. A soluç�
 
 ## Início rápido com containers
 
+Este Compose é para desenvolvimento. Para a VM, use exclusivamente [compose.production.yaml](compose.production.yaml) e siga [o guia de produção](deploy/README.md).
+
 Pré-requisito: Docker Desktop, Docker Engine ou alternativa compatível com Compose.
 
 ```bash
@@ -51,6 +53,8 @@ dotnet run --project src/CepApi.Api
 
 Em `Development`, códigos de convite e recuperação são registrados somente no log local. Nos demais ambientes, o envio usa SMTP.
 
+Os e-mails são enfileirados junto com a operação no banco e entregues em segundo plano. Uma falha temporária do SMTP não desfaz o cadastro; a fila tenta novamente até a expiração do código.
+
 ## Configuração de produção
 
 As chaves usam a sintaxe hierárquica do ASP.NET Core (`__` em variáveis de ambiente):
@@ -60,6 +64,11 @@ As chaves usam a sintaxe hierárquica do ASP.NET Core (`__` em variáveis de amb
 - `Jwt__KeyId`: identificador público da chave ativa.
 - `Jwt__PreviousPublicKeys__0__KeyId` e `Jwt__PreviousPublicKeys__0__PublicKeyPem`: chaves anteriores aceitas durante rotação.
 - `Email__Host`, `Email__Port`, `Email__UseSsl`, `Email__Username`, `Email__Password`, `Email__FromAddress` e `Email__FromName`: SMTP.
+- `Email__UseSsl=true` usa TLS direto (geralmente 465); `false` exige STARTTLS (geralmente 587). Transporte sem TLS só é permitido fora de produção, explicitamente com `Email__AllowInsecureTransport=true`.
+- `DataProtection__KeysPath`: diretório persistente das chaves que protegem o conteúdo da fila de e-mails; obrigatório em produção.
+- `ReverseProxy__KnownProxies__0`: IP do proxy confiável. Nunca confie em cabeçalhos de IP de qualquer origem.
+
+Arquivos montados em `/run/secrets` também são lidos como configuração hierárquica, por exemplo `Jwt__PrivateKeyPem`. No Compose de produção, as credenciais do banco para execução e migração são diferentes.
 
 Gere uma chave RSA fora do repositório e injete-a pelo gerenciador de segredos da plataforma:
 
@@ -84,11 +93,18 @@ dotnet test tests/CepApi.UnitTests
 dotnet test tests/CepApi.IntegrationTests
 ```
 
-Os testes de integração usam Testcontainers e PostgreSQL. Quando o Docker não está disponível localmente, eles são marcados como ignorados; na CI (`CI=true`) a ausência de Docker falha o job. A coleção de exemplos está em `requests/cep-api.http` e o contrato do cliente em `docs/plugin-integration.md`.
+Os testes de integração e segurança exigem Docker e usam PostgreSQL real. Incluem recuperação, revogação, concorrência, isolamento entre organizações, retentativa de SMTP e proxy. A coleção de exemplos está em `requests/cep-api.http` e o contrato do cliente em `docs/plugin-integration.md`.
+
+Para validar a imagem, as migrations e o fluxo HTTPS com dados descartáveis (PowerShell 7):
+
+```powershell
+docker build -t cep-api:security-review .
+./deploy/Test-ProductionStack.ps1
+```
 
 Endpoints de operação:
 
 - `GET /health/live`: processo em execução.
 - `GET /health/ready`: acesso ao PostgreSQL confirmado.
 - `GET /.well-known/jwks.json`: chaves públicas de assinatura.
-- `GET /swagger`: documentação interativa.
+- `GET /swagger`: documentação interativa somente fora de produção.

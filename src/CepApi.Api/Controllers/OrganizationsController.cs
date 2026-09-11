@@ -16,7 +16,7 @@ public sealed partial class OrganizationsController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
     ISecurityCodeService codeService,
-    IEmailSender emailSender,
+    IEmailQueue emailQueue,
     IClock clock,
     IAuditService audit) : ApiControllerBase
 {
@@ -72,8 +72,7 @@ public sealed partial class OrganizationsController(
         };
         db.Organizations.Add(organization);
         db.Invitations.Add(invitation);
-        await db.SaveChangesAsync(cancellationToken);
-        await emailSender.SendInvitationAsync(request.InitialAdminEmail.Trim(), organization.Name, code, invitation.ExpiresAt, cancellationToken);
+        emailQueue.Invitation(request.InitialAdminEmail.Trim(), organization.Name, code, invitation.ExpiresAt);
         await audit.WriteAsync("organization.created", organization.Id, CurrentUserId, details: new { organization.Id, organization.Slug }, ipAddress: IpAddress, cancellationToken: cancellationToken);
         return CreatedAtAction(nameof(Get), new { organizationId = organization.Id },
             new OrganizationResponse(organization.Id, organization.Name, organization.Slug, organization.Status, organization.CreatedAt));
@@ -91,6 +90,8 @@ public sealed partial class OrganizationsController(
     [HttpPatch("{organizationId:guid}/status")]
     public async Task<IActionResult> ChangeStatus(Guid organizationId, ChangeOrganizationStatusRequest request, CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT \"Id\" FROM organizations WHERE \"Id\" = {organizationId} FOR UPDATE", cancellationToken);
         var organization = await db.Organizations.SingleOrDefaultAsync(x => x.Id == organizationId, cancellationToken);
         if (organization is null) return ApiProblem(StatusCodes.Status404NotFound, "Organization not found.", "organization_not_found");
         if (organization.Status == OrganizationStatus.Archived && request.Status != OrganizationStatus.Archived)
@@ -100,7 +101,8 @@ public sealed partial class OrganizationsController(
         organization.UpdatedAt = clock.UtcNow;
         if (request.Status != OrganizationStatus.Active)
         {
-            var userIds = await db.Users.Where(x => x.OrganizationId == organizationId).Select(x => x.Id).ToListAsync(cancellationToken);
+            var userIds = await db.Users.Where(x => x.OrganizationId == organizationId).OrderBy(x => x.Id).Select(x => x.Id).ToListAsync(cancellationToken);
+            foreach (var userId in userIds) await db.LockUserAsync(userId, cancellationToken);
             var sessions = await db.RefreshSessions.Where(x => userIds.Contains(x.UserId) && x.RevokedAt == null).ToListAsync(cancellationToken);
             foreach (var session in sessions)
             {
@@ -111,6 +113,7 @@ public sealed partial class OrganizationsController(
         await db.SaveChangesAsync(cancellationToken);
         await audit.WriteAsync("organization.status_changed", organizationId, CurrentUserId,
             details: new { status = request.Status.ToString() }, ipAddress: IpAddress, cancellationToken: cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return NoContent();
     }
 
@@ -140,8 +143,7 @@ public sealed partial class OrganizationsController(
         invitation.CodeHash = codeService.Hash(code);
         invitation.ExpiresAt = clock.UtcNow.AddHours(48);
         invitation.FailedAttempts = 0;
-        await db.SaveChangesAsync(cancellationToken);
-        await emailSender.SendInvitationAsync(invitation.Email, invitation.Organization.Name, code, invitation.ExpiresAt, cancellationToken);
+        emailQueue.Invitation(invitation.Email, invitation.Organization.Name, code, invitation.ExpiresAt);
         await audit.WriteAsync("invitation.resent_by_system_admin", organizationId, CurrentUserId,
             details: new { invitation.Id }, ipAddress: IpAddress, cancellationToken: cancellationToken);
         return NoContent();

@@ -6,3 +6,9 @@
 TestResults
 artifacts
 README.md
+.local
+.env*
+**/*.pem
+**/*.key
+**/*.pfx
+**/appsettings.Local.json

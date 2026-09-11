@@ -29,10 +29,18 @@ jobs:
       - name: Validate idempotent migration script
         run: |
           mkdir -p artifacts
-          dotnet ef migrations script --idempotent --no-build \
+          dotnet ef migrations script --idempotent --no-build --configuration Release \
             --project src/CepApi.Infrastructure/CepApi.Infrastructure.csproj \
             --startup-project src/CepApi.Api/CepApi.Api.csproj \
             --output artifacts/migrations.sql
+          dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
+            --project src/CepApi.Infrastructure/CepApi.Infrastructure.csproj \
+            --startup-project src/CepApi.Api/CepApi.Api.csproj
+      - name: Build production container
+        run: docker build -t cep-api:security-review .
+      - name: Test production stack over HTTPS
+        shell: pwsh
+        run: ./deploy/Test-ProductionStack.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: migrations

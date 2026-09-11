@@ -4,6 +4,7 @@ using CepApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace CepApi.Api.Controllers;
@@ -37,8 +38,10 @@ public sealed class MeController(AppDbContext db, UserManager<ApplicationUser> u
     }
 
     [HttpPut("password")]
+    [EnableRateLimiting("account")]
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken cancellationToken)
     {
+        await using var transaction = await db.BeginForUserAsync(CurrentUserId, cancellationToken);
         var user = await userManager.FindByIdAsync(CurrentUserId.ToString());
         if (user is null) return ApiProblem(StatusCodes.Status404NotFound, "User not found.", "user_not_found");
 
@@ -57,7 +60,9 @@ public sealed class MeController(AppDbContext db, UserManager<ApplicationUser> u
             session.RevocationReason = "password_changed";
         }
         await db.SaveChangesAsync(cancellationToken);
+        await db.InvalidateResetCodesAsync(user.Id, clock.UtcNow, cancellationToken);
         await audit.WriteAsync("auth.password_changed", user.OrganizationId, user.Id, user.Id, ipAddress: IpAddress, cancellationToken: cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return NoContent();
     }
 
@@ -75,16 +80,15 @@ public sealed class MeController(AppDbContext db, UserManager<ApplicationUser> u
     [HttpDelete("sessions/{sessionId:guid}")]
     public async Task<IActionResult> RevokeSession(Guid sessionId, CancellationToken cancellationToken)
     {
-        var session = await db.RefreshSessions.SingleOrDefaultAsync(x => x.Id == sessionId && x.UserId == CurrentUserId, cancellationToken);
+        await using var transaction = await db.BeginForUserAsync(CurrentUserId, cancellationToken);
+        var session = await db.RefreshSessions.AsNoTracking().SingleOrDefaultAsync(x => x.Id == sessionId && x.UserId == CurrentUserId, cancellationToken);
         if (session is null) return ApiProblem(StatusCodes.Status404NotFound, "Session not found.", "session_not_found");
-        if (session.RevokedAt is null)
+        if (await db.RevokeFamilyAsync(CurrentUserId, session.FamilyId, clock.UtcNow, "user_revoked", cancellationToken) > 0)
         {
-            session.RevokedAt = clock.UtcNow;
-            session.RevocationReason = "user_revoked";
-            await db.SaveChangesAsync(cancellationToken);
             await audit.WriteAsync("session.revoked", CurrentOrganizationId, CurrentUserId, CurrentUserId,
                 new { sessionId }, IpAddress, cancellationToken);
         }
+        await transaction.CommitAsync(cancellationToken);
         return NoContent();
     }
 
