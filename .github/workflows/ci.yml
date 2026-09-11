@@ -13,6 +13,8 @@ jobs:
       CI: "true"
     steps:
       - uses: actions/checkout@v4
+      - name: Test nightly deployment safeguards
+        run: python3 -m unittest discover -s deploy/nightly -p 'test_*.py' -v
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
