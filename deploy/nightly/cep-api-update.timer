@@ -1,0 +1,12 @@
+[Unit]
+Description=Check CEP API main every day at 02:00 Sao Paulo
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 America/Sao_Paulo
+AccuracySec=1min
+RandomizedDelaySec=0
+Persistent=false
+Unit=cep-api-update.service
+
+[Install]
+WantedBy=timers.target

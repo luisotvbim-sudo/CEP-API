@@ -13,6 +13,8 @@ jobs:
       CI: "true"
     steps:
       - uses: actions/checkout@v4
+      - name: Validate nightly deployment script
+        run: bash -n deploy/nightly/deploy.sh deploy/nightly/install.sh
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
