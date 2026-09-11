@@ -4,6 +4,7 @@ using CepApi.Domain;
 using CepApi.Infrastructure.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 namespace CepApi.UnitTests;
 
@@ -33,6 +34,22 @@ public sealed class JwtTokenServiceTests
         Assert.Equal(user.OrganizationId.ToString(), token.Claims.Single(x => x.Type == "org_id").Value);
         Assert.Equal("test-plugin", token.Audiences.Single());
         Assert.Equal("test-key", token.Header.Kid);
+        var handler = new JwtSecurityTokenHandler();
+        var validation = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true, IssuerSigningKeys = keys.ValidationKeys,
+            ValidateIssuer = true, ValidIssuer = "test-issuer", ValidateAudience = true,
+            ValidAudience = "test-plugin", ValidateLifetime = false,
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256], ValidTypes = ["plugin-grant+jwt"]
+        };
+        handler.ValidateToken(grant.Token, validation, out _);
+        var parts = grant.Token.Split('.');
+        var signature = Base64UrlEncoder.DecodeBytes(parts[2]);
+        signature[0] ^= 1;
+        var tampered = $"{parts[0]}.{parts[1]}.{Base64UrlEncoder.Encode(signature)}";
+        Assert.ThrowsAny<SecurityTokenException>(() => handler.ValidateToken(tampered, validation, out _));
+        validation.ValidAudience = "test-api";
+        Assert.Throws<SecurityTokenInvalidAudienceException>(() => handler.ValidateToken(grant.Token, validation, out _));
     }
 
     [Fact]

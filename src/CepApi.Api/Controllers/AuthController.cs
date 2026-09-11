@@ -20,39 +20,43 @@ public sealed class AuthController(
     SignInManager<ApplicationUser> signInManager,
     ITokenService tokenService,
     ISecurityCodeService codeService,
-    IEmailSender emailSender,
+    IEmailQueue emailQueue,
     IClock clock,
     IAuditService audit,
-    IOptions<JwtOptions> jwtOptions,
-    ILogger<AuthController> logger) : ApiControllerBase
+    IOptions<JwtOptions> jwtOptions) : ApiControllerBase
 {
     [HttpPost("login")]
     [EnableRateLimiting("auth")]
     public async Task<ActionResult<TokenResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
     {
         var normalizedEmail = userManager.NormalizeEmail(request.Email);
-        var user = await db.Users.Include(x => x.Organization).Include(x => x.ProductAccesses)
-            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken);
+        var userId = await db.Users.AsNoTracking().Where(x => x.NormalizedEmail == normalizedEmail)
+            .Select(x => (Guid?)x.Id).SingleOrDefaultAsync(cancellationToken);
 
-        if (user is null)
+        if (userId is null)
         {
             _ = userManager.PasswordHasher.HashPassword(new ApplicationUser { DisplayName = "dummy" }, request.Password);
             await audit.WriteAsync("auth.login_failed", details: new { reason = "invalid_credentials" }, ipAddress: IpAddress, cancellationToken: cancellationToken);
             return ApiProblem(StatusCodes.Status401Unauthorized, "Authentication failed.", "invalid_credentials");
         }
 
+        await using var transaction = await db.BeginForUserAsync(userId.Value, cancellationToken);
+        var user = await db.Users.Include(x => x.Organization).Include(x => x.ProductAccesses)
+            .SingleAsync(x => x.Id == userId, cancellationToken);
         var passwordResult = await signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
         if (!passwordResult.Succeeded || user.Status != UserStatus.Active ||
             user.Organization is { Status: not OrganizationStatus.Active })
         {
             await audit.WriteAsync("auth.login_failed", user.OrganizationId, user.Id, user.Id,
                 new { reason = passwordResult.IsLockedOut ? "locked_out" : "invalid_or_inactive" }, IpAddress, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return ApiProblem(StatusCodes.Status401Unauthorized, "Authentication failed.", "invalid_credentials");
         }
 
         var response = await CreateSessionAsync(user, request.Client, cancellationToken);
         await audit.WriteAsync("auth.login_succeeded", user.OrganizationId, user.Id, user.Id,
             new { client = request.Client?.Type ?? "unknown" }, IpAddress, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Ok(response);
     }
 
@@ -61,9 +65,13 @@ public sealed class AuthController(
     public async Task<ActionResult<TokenResponse>> Refresh(RefreshRequest request, CancellationToken cancellationToken)
     {
         var hash = tokenService.HashRefreshToken(request.RefreshToken);
-        var session = await db.RefreshSessions.SingleOrDefaultAsync(x => x.TokenHash == hash, cancellationToken);
-        if (session is null)
+        var userId = await db.RefreshSessions.AsNoTracking().Where(x => x.TokenHash == hash)
+            .Select(x => (Guid?)x.UserId).SingleOrDefaultAsync(cancellationToken);
+        if (userId is null)
             return ApiProblem(StatusCodes.Status401Unauthorized, "Refresh failed.", "invalid_refresh_token");
+
+        await using var transaction = await db.BeginForUserAsync(userId.Value, cancellationToken);
+        var session = await db.RefreshSessions.SingleAsync(x => x.TokenHash == hash, cancellationToken);
 
         if (session.RevokedAt is not null)
         {
@@ -80,6 +88,7 @@ public sealed class AuthController(
                 await audit.WriteAsync("auth.refresh_reuse_detected", actorUserId: session.UserId,
                     targetUserId: session.UserId, ipAddress: IpAddress, cancellationToken: cancellationToken);
             }
+            await transaction.CommitAsync(cancellationToken);
             return ApiProblem(StatusCodes.Status401Unauthorized, "Refresh failed.", "invalid_refresh_token");
         }
 
@@ -92,6 +101,7 @@ public sealed class AuthController(
             session.RevokedAt = now;
             session.RevocationReason = "expired_or_inactive";
             await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return ApiProblem(StatusCodes.Status401Unauthorized, "Refresh failed.", "invalid_refresh_token");
         }
 
@@ -115,7 +125,8 @@ public sealed class AuthController(
         db.RefreshSessions.Add(replacement);
         await db.SaveChangesAsync(cancellationToken);
 
-        var access = tokenService.CreateAccessToken(ToTokenUser(user), now);
+        var access = tokenService.CreateAccessToken(ToTokenUser(user), replacement.FamilyId, user.SecurityStamp!, now);
+        await transaction.CommitAsync(cancellationToken);
         return Ok(new TokenResponse(access.Token, access.ExpiresAt, refreshToken, replacement.ExpiresAt, ToResponse(user)));
     }
 
@@ -123,14 +134,14 @@ public sealed class AuthController(
     public async Task<IActionResult> Logout(LogoutRequest request, CancellationToken cancellationToken)
     {
         var hash = tokenService.HashRefreshToken(request.RefreshToken);
-        var session = await db.RefreshSessions.SingleOrDefaultAsync(x => x.TokenHash == hash, cancellationToken);
-        if (session is { RevokedAt: null })
+        var session = await db.RefreshSessions.AsNoTracking().SingleOrDefaultAsync(x => x.TokenHash == hash, cancellationToken);
+        if (session is not null)
         {
-            session.RevokedAt = clock.UtcNow;
-            session.RevocationReason = "logout";
-            await db.SaveChangesAsync(cancellationToken);
+            await using var transaction = await db.BeginForUserAsync(session.UserId, cancellationToken);
+            await db.RevokeFamilyAsync(session.UserId, session.FamilyId, clock.UtcNow, "logout", cancellationToken);
             await audit.WriteAsync("auth.logout", actorUserId: session.UserId, targetUserId: session.UserId,
                 ipAddress: IpAddress, cancellationToken: cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         return NoContent();
     }
@@ -140,6 +151,8 @@ public sealed class AuthController(
     public async Task<ActionResult<TokenResponse>> AcceptInvitation(AcceptInvitationRequest request, CancellationToken cancellationToken)
     {
         var normalizedEmail = userManager.NormalizeEmail(request.Email);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT \"Id\" FROM invitations WHERE \"Email\" = {normalizedEmail} ORDER BY \"Id\" FOR UPDATE", cancellationToken);
         var invitation = await db.Invitations.Include(x => x.Organization)
             .Where(x => x.Email == normalizedEmail && x.AcceptedAt == null && x.RevokedAt == null)
             .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(cancellationToken);
@@ -152,6 +165,7 @@ public sealed class AuthController(
                 invitation.FailedAttempts++;
                 await db.SaveChangesAsync(cancellationToken);
             }
+            await transaction.CommitAsync(cancellationToken);
             return ApiProblem(StatusCodes.Status400BadRequest, "Invitation is invalid or expired.", "invalid_invitation");
         }
         if (invitation.Organization.Status != OrganizationStatus.Active)
@@ -159,7 +173,6 @@ public sealed class AuthController(
         if (await db.Users.AnyAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken))
             return ApiProblem(StatusCodes.Status409Conflict, "The email is already in use.", "email_already_exists");
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var user = new ApplicationUser
         {
             Id = Guid.CreateVersion7(),
@@ -187,11 +200,10 @@ public sealed class AuthController(
         if (invitation.CanUseZwcad) db.ProductAccesses.Add(new ProductAccess { UserId = user.Id, Product = Product.Zwcad, GrantedAt = now });
         invitation.AcceptedAt = now;
         await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
         await db.Entry(user).Collection(x => x.ProductAccesses).LoadAsync(cancellationToken);
         var response = await CreateSessionAsync(user, request.Client, cancellationToken);
         await audit.WriteAsync("invitation.accepted", user.OrganizationId, user.Id, user.Id, ipAddress: IpAddress, cancellationToken: cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Ok(response);
     }
 
@@ -203,7 +215,11 @@ public sealed class AuthController(
         var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken);
         if (user is { Status: UserStatus.Active })
         {
+            await using var transaction = await db.BeginForUserAsync(user.Id, cancellationToken);
+            if (!await db.Users.AnyAsync(x => x.Id == user.Id && x.Status == UserStatus.Active, cancellationToken))
+                return Accepted();
             var now = clock.UtcNow;
+            await db.InvalidateResetCodesAsync(user.Id, now, cancellationToken);
             var code = codeService.GeneratePasswordResetCode();
             db.PasswordResets.Add(new PasswordReset
             {
@@ -212,15 +228,9 @@ public sealed class AuthController(
                 CreatedAt = now,
                 ExpiresAt = now.AddMinutes(15)
             });
+            emailQueue.PasswordReset(user.Email!, code, now.AddMinutes(15));
             await db.SaveChangesAsync(cancellationToken);
-            try
-            {
-                await emailSender.SendPasswordResetAsync(user.Email!, code, now.AddMinutes(15), cancellationToken);
-            }
-            catch (Exception exception)
-            {
-                logger.LogError(exception, "Password reset email delivery failed for user {UserId}.", user.Id);
-            }
+            await transaction.CommitAsync(cancellationToken);
         }
         return Accepted();
     }
@@ -230,20 +240,25 @@ public sealed class AuthController(
     public async Task<IActionResult> ResetPassword(ResetPasswordRequest request, CancellationToken cancellationToken)
     {
         var normalizedEmail = userManager.NormalizeEmail(request.Email);
-        var user = await db.Users.SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken);
-        if (user is null)
+        var userId = await db.Users.AsNoTracking().Where(x => x.NormalizedEmail == normalizedEmail)
+            .Select(x => (Guid?)x.Id).SingleOrDefaultAsync(cancellationToken);
+        if (userId is null)
             return ApiProblem(StatusCodes.Status400BadRequest, "Reset code is invalid or expired.", "invalid_reset_code");
 
-        var reset = await db.PasswordResets.Where(x => x.UserId == user.Id && x.UsedAt == null)
+        await using var transaction = await db.BeginForUserAsync(userId.Value, cancellationToken);
+        var user = await db.Users.SingleAsync(x => x.Id == userId, cancellationToken);
+
+        var reset = await db.PasswordResets.AsNoTracking().Where(x => x.UserId == user.Id && x.UsedAt == null)
             .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(cancellationToken);
         var now = clock.UtcNow;
         if (reset is null || reset.ExpiresAt <= now || reset.FailedAttempts >= 5 || !codeService.Verify(request.Code, reset.CodeHash))
         {
             if (reset is not null)
             {
-                reset.FailedAttempts++;
-                await db.SaveChangesAsync(cancellationToken);
+                await db.PasswordResets.Where(x => x.Id == reset.Id)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.FailedAttempts, x => x.FailedAttempts + 1), cancellationToken);
             }
+            await transaction.CommitAsync(cancellationToken);
             return ApiProblem(StatusCodes.Status400BadRequest, "Reset code is invalid or expired.", "invalid_reset_code");
         }
 
@@ -256,10 +271,11 @@ public sealed class AuthController(
             })
             { Extensions = { ["code"] = "invalid_password" } });
 
-        reset.UsedAt = now;
+        await db.InvalidateResetCodesAsync(user.Id, now, cancellationToken);
         await RevokeSessionsAsync(user.Id, "password_reset", cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await audit.WriteAsync("auth.password_reset", user.OrganizationId, user.Id, user.Id, ipAddress: IpAddress, cancellationToken: cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return NoContent();
     }
 
@@ -280,7 +296,7 @@ public sealed class AuthController(
         };
         db.RefreshSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
-        var access = tokenService.CreateAccessToken(ToTokenUser(user), now);
+        var access = tokenService.CreateAccessToken(ToTokenUser(user), session.FamilyId, user.SecurityStamp!, now);
         return new TokenResponse(access.Token, access.ExpiresAt, refreshToken, session.ExpiresAt, ToResponse(user));
     }
 

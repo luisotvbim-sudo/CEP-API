@@ -15,10 +15,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<EmailOutboxMessage> EmailOutbox => Set<EmailOutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<EmailOutboxMessage>(entity =>
+        {
+            entity.ToTable("email_outbox");
+            entity.HasIndex(x => x.NextAttemptAt);
+        });
 
         builder.Entity<ApplicationUser>(entity =>
         {

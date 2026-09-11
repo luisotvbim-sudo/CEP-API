@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -10,6 +11,7 @@ using CepApi.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -17,6 +19,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddKeyPerFile("/run/secrets", optional: true);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
@@ -69,6 +72,8 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
             ValidAudience = jwt.ApiAudience,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(30),
+            ValidTypes = ["at+jwt"],
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
             NameClaimType = "name",
             RoleClaimType = "role"
         };
@@ -93,6 +98,16 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
                 }
 
                 var tokenRole = context.Principal?.FindFirstValue("role");
+                var now = context.HttpContext.RequestServices.GetRequiredService<CepApi.Application.IClock>().UtcNow;
+                if (string.IsNullOrEmpty(user.SecurityStamp) ||
+                    context.Principal?.FindFirstValue("security_version") != JwtTokenService.SecurityVersion(user.SecurityStamp) ||
+                    !Guid.TryParse(context.Principal?.FindFirstValue("sid"), out var familyId) ||
+                    !await db.RefreshSessions.AsNoTracking().AnyAsync(x => x.UserId == user.Id &&
+                        x.FamilyId == familyId && x.RevokedAt == null && x.ExpiresAt > now, context.HttpContext.RequestAborted))
+                {
+                    context.Fail("Session has been revoked.");
+                    return;
+                }
                 var tokenOrganization = context.Principal?.FindFirstValue("org_id");
                 if (!string.Equals(tokenRole, user.Role.ToString(), StringComparison.Ordinal) ||
                     !string.Equals(tokenOrganization, user.OrganizationId?.ToString(), StringComparison.Ordinal))
@@ -102,19 +117,30 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
     });
 builder.Services.AddAuthorization();
 
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    foreach (var proxy in builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? [])
+        options.KnownProxies.Add(IPAddress.Parse(proxy));
+});
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            $"{httpContext.Connection.RemoteIpAddress}:{httpContext.Request.Path.Value?.TrimEnd('/').ToLowerInvariant()}",
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 10,
+                PermitLimit = builder.Configuration.GetValue("RateLimiting:AuthPerMinute", 60),
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy("account", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.User.FindFirstValue("sub") ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
@@ -123,6 +149,7 @@ ValidateProductionConfiguration(builder);
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseStatusCodePages(async statusContext =>
@@ -143,11 +170,14 @@ app.UseStatusCodePages(async statusContext =>
     });
 });
 app.UseHttpsRedirection();
-app.UseRateLimiter();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
-app.UseSwagger();
-app.UseSwaggerUI();
+if (!app.Environment.IsProduction())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 app.MapControllers();
 app.MapGet("/.well-known/jwks.json", (JwtKeyRing keyRing) => Results.Ok(keyRing.GetJwks()))
     .AllowAnonymous().WithTags("Discovery");
@@ -179,6 +209,12 @@ static void ValidateProductionConfiguration(WebApplicationBuilder builder)
         throw new InvalidOperationException("Jwt:PrivateKeyPem is required in Production.");
     if (string.IsNullOrWhiteSpace(email?.Host) || string.IsNullOrWhiteSpace(email.FromAddress))
         throw new InvalidOperationException("A valid SMTP Email configuration is required in Production.");
+    if (email.AllowInsecureTransport)
+        throw new InvalidOperationException("SMTP TLS is required in Production.");
+    if (string.IsNullOrWhiteSpace(builder.Configuration["DataProtection:KeysPath"]))
+        throw new InvalidOperationException("DataProtection:KeysPath is required in Production for the durable email outbox.");
+    if (jwt.KeyId == "development-key" || jwt.AccessTokenMinutes is < 1 or > 15 || jwt.PluginGrantHours is < 1 or > 72)
+        throw new InvalidOperationException("Configure a production Jwt:KeyId and bounded token lifetimes.");
 }
 
 static async Task BootstrapAdminAsync(IServiceProvider services, IConfiguration configuration)
