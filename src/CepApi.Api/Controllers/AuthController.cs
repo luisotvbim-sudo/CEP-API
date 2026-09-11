@@ -21,6 +21,7 @@ public sealed class AuthController(
     ITokenService tokenService,
     ISecurityCodeService codeService,
     IEmailQueue emailQueue,
+    IRegistrationEmailPolicy registrationEmailPolicy,
     IClock clock,
     IAuditService audit,
     IOptions<JwtOptions> jwtOptions) : ApiControllerBase
@@ -150,6 +151,8 @@ public sealed class AuthController(
     [EnableRateLimiting("auth")]
     public async Task<ActionResult<TokenResponse>> AcceptInvitation(AcceptInvitationRequest request, CancellationToken cancellationToken)
     {
+        if (!await registrationEmailPolicy.IsAllowedAsync(request.Email, cancellationToken))
+            return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
         var normalizedEmail = userManager.NormalizeEmail(request.Email);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT \"Id\" FROM invitations WHERE \"Email\" = {normalizedEmail} ORDER BY \"Id\" FOR UPDATE", cancellationToken);

@@ -69,6 +69,7 @@ function Invoke-TestCompose {
 try {
     Invoke-TestCompose up -d --no-build --wait postgres
     Invoke-TestCompose run --rm --no-deps migrate migrate
+    Invoke-TestCompose exec -T postgres psql -U postgres -d cep_api -v ON_ERROR_STOP=1 -c "INSERT INTO allowed_email_domains (domain) VALUES ('example.test');"
     Invoke-TestCompose run --rm --no-deps migrate bootstrap-admin
     Invoke-TestCompose up -d --no-build --wait --wait-timeout 90 api nginx
     $baseUrl = "https://localhost:$httpsPort"

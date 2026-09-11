@@ -46,6 +46,8 @@ docker compose --env-file .env -f compose.production.yaml run --rm migrate migra
 
 Para criar o administrador, monte temporariamente dois secrets adicionais no serviço `migrate`, com os nomes de destino `BootstrapAdmin__Email` e `BootstrapAdmin__Password`, e execute `run --rm migrate bootstrap-admin`. Remova os dois mounts e os arquivos de bootstrap após o sucesso. A API recusa bootstrap se já existe SystemAdmin. O teste `Test-ProductionStack.ps1` exemplifica os mounts, usando credenciais descartáveis e sem imprimi-las.
 
+O e-mail do administrador e os novos convites devem pertencer a um domínio habilitado em `allowed_email_domains`; inicialmente apenas `conceitoprojetos.com`. Veja [como adicionar domínios pelo banco](../docs/allowed-email-domains.md).
+
 ```bash
 docker compose --env-file .env -f compose.production.yaml up -d --wait
 ```

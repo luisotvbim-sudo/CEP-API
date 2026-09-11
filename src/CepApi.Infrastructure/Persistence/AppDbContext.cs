@@ -16,10 +16,21 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<EmailOutboxMessage> EmailOutbox => Set<EmailOutboxMessage>();
+    public DbSet<AllowedEmailDomain> AllowedEmailDomains => Set<AllowedEmailDomain>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<AllowedEmailDomain>(entity =>
+        {
+            entity.ToTable("allowed_email_domains", table => table.HasCheckConstraint(
+                "ck_allowed_email_domains_normalized",
+                "domain = lower(domain) AND domain ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'"));
+            entity.HasKey(x => x.Domain);
+            entity.Property(x => x.Domain).HasColumnName("domain").HasMaxLength(253);
+            entity.Property(x => x.IsEnabled).HasColumnName("is_enabled").HasDefaultValue(true);
+        });
 
         builder.Entity<EmailOutboxMessage>(entity =>
         {

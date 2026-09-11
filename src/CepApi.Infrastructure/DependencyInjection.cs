@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IEmailQueue, EmailOutbox>();
+        services.AddScoped<IRegistrationEmailPolicy, RegistrationEmailPolicy>();
         services.AddScoped<EmailOutboxDispatcher>();
         if (configuration.GetValue("EmailOutbox:Enabled", true))
             services.AddHostedService<EmailOutboxWorker>();

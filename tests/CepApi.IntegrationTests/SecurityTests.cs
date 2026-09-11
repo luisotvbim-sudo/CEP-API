@@ -217,7 +217,10 @@ public sealed class SecurityFixture : IAsyncLifetime
             });
         });
         await using var scope = Factory.Services.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await db.Database.MigrateAsync();
+        db.AllowedEmailDomains.Add(new AllowedEmailDomain { Domain = "example.test" });
+        await db.SaveChangesAsync();
     }
 
     public HttpClient Client() => Factory.CreateClient(new WebApplicationFactoryClientOptions
