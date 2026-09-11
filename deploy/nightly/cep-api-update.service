@@ -1,5 +1,5 @@
 [Unit]
-Description=Deploy tested CEP API updates during the maintenance window
+Description=Deploy tested CEP API updates at 02:00 Sao Paulo
 Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service
@@ -8,7 +8,7 @@ Requires=docker.service
 Type=oneshot
 User=root
 WorkingDirectory=/opt/cep-api
-ExecStart=/usr/bin/python3 /usr/local/lib/cep-api/nightly_deploy.py
+ExecStart=/usr/bin/flock -n /run/lock/cep-api-update.lock /usr/local/sbin/cep-api-nightly-deploy
 TimeoutStartSec=45min
 TimeoutStopSec=5min
 UMask=0077
@@ -16,6 +16,5 @@ Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 Environment=GIT_TERMINAL_PROMPT=0
-Environment=PYTHONUNBUFFERED=1
 StandardOutput=journal
 StandardError=journal

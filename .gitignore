@@ -7,7 +7,6 @@ TestResults/
 coverage/
 artifacts/
 .local/
-**/__pycache__/
 *.user
 *.suo
 *.pfx

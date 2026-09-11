@@ -7,7 +7,6 @@ TestResults
 artifacts
 README.md
 .local
-**/__pycache__
 .env*
 **/*.pem
 **/*.key
