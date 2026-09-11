@@ -7,6 +7,11 @@ public interface IClock
     DateTimeOffset UtcNow { get; }
 }
 
+public interface IRegistrationEmailPolicy
+{
+    Task<bool> IsAllowedAsync(string? email, CancellationToken cancellationToken = default);
+}
+
 public interface IEmailSender
 {
     Task SendInvitationAsync(string email, string organizationName, string code, DateTimeOffset expiresAt, CancellationToken cancellationToken);

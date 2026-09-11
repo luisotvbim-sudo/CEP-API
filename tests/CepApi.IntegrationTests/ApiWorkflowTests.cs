@@ -118,6 +118,8 @@ public sealed class ApiWorkflowTests
         await using var scope = services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.MigrateAsync(cancellationToken);
+        db.AllowedEmailDomains.AddRange(new AllowedEmailDomain { Domain = "example.com" }, new AllowedEmailDomain { Domain = "acme.test" });
+        await db.SaveChangesAsync(cancellationToken);
         var manager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var now = DateTimeOffset.UtcNow;
         var systemAdmin = new ApplicationUser

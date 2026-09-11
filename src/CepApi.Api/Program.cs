@@ -226,6 +226,8 @@ static async Task BootstrapAdminAsync(IServiceProvider services, IConfiguration 
         throw new InvalidOperationException("A SystemAdmin already exists; bootstrap refuses to overwrite it.");
 
     var email = configuration["BootstrapAdmin:Email"] ?? throw new InvalidOperationException("BootstrapAdmin:Email is required.");
+    if (!await scope.ServiceProvider.GetRequiredService<CepApi.Application.IRegistrationEmailPolicy>().IsAllowedAsync(email))
+        throw new InvalidOperationException("Bootstrap administrator email domain is not allowed for registration.");
     var password = configuration["BootstrapAdmin:Password"] ?? throw new InvalidOperationException("BootstrapAdmin:Password is required.");
     var displayName = configuration["BootstrapAdmin:DisplayName"] ?? "System Administrator";
     var now = DateTimeOffset.UtcNow;

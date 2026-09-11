@@ -17,6 +17,7 @@ public sealed partial class OrganizationsController(
     UserManager<ApplicationUser> userManager,
     ISecurityCodeService codeService,
     IEmailQueue emailQueue,
+    IRegistrationEmailPolicy registrationEmailPolicy,
     IClock clock,
     IAuditService audit) : ApiControllerBase
 {
@@ -42,6 +43,8 @@ public sealed partial class OrganizationsController(
     [HttpPost]
     public async Task<ActionResult<OrganizationResponse>> Create(CreateOrganizationRequest request, CancellationToken cancellationToken)
     {
+        if (!await registrationEmailPolicy.IsAllowedAsync(request.InitialAdminEmail, cancellationToken))
+            return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
         var slug = request.Slug.Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(request.Name) || !SlugPattern().IsMatch(slug))
             return ApiProblem(StatusCodes.Status400BadRequest, "Name or slug is invalid.", "invalid_organization");
@@ -138,6 +141,9 @@ public sealed partial class OrganizationsController(
             return ApiProblem(StatusCodes.Status404NotFound, "Invitation not found.", "invitation_not_found");
         if (invitation.AcceptedAt is not null || invitation.RevokedAt is not null)
             return ApiProblem(StatusCodes.Status409Conflict, "Invitation is no longer pending.", "invitation_not_pending");
+
+        if (!await registrationEmailPolicy.IsAllowedAsync(invitation.Email, cancellationToken))
+            return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
 
         var code = codeService.GenerateInvitationCode();
         invitation.CodeHash = codeService.Hash(code);

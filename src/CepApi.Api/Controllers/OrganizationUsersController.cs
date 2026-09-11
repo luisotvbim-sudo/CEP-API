@@ -16,6 +16,7 @@ public sealed class OrganizationUsersController(
     UserManager<ApplicationUser> userManager,
     ISecurityCodeService codeService,
     IEmailQueue emailQueue,
+    IRegistrationEmailPolicy registrationEmailPolicy,
     IClock clock,
     IAuditService audit) : ApiControllerBase
 {
@@ -46,6 +47,8 @@ public sealed class OrganizationUsersController(
     [HttpPost("invitations")]
     public async Task<ActionResult<InvitationResponse>> Invite(InviteUserRequest request, CancellationToken cancellationToken)
     {
+        if (!await registrationEmailPolicy.IsAllowedAsync(request.Email, cancellationToken))
+            return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
         if (request.Role is UserRole.SystemAdmin)
             return ApiProblem(StatusCodes.Status400BadRequest, "SystemAdmin cannot be assigned inside an organization.", "invalid_role");
         var organizationId = RequireOrganizationId();
@@ -97,6 +100,9 @@ public sealed class OrganizationUsersController(
         if (invitation is null) return ApiProblem(StatusCodes.Status404NotFound, "Invitation not found.", "invitation_not_found");
         if (invitation.AcceptedAt is not null || invitation.RevokedAt is not null)
             return ApiProblem(StatusCodes.Status409Conflict, "Invitation is no longer pending.", "invitation_not_pending");
+
+        if (!await registrationEmailPolicy.IsAllowedAsync(invitation.Email, cancellationToken))
+            return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
 
         var code = codeService.GenerateInvitationCode();
         invitation.CodeHash = codeService.Hash(code);
