@@ -100,7 +100,7 @@ rollback_and_exit() {
   git checkout --detach "$current"
   sed -i "s/^API_IMAGE_TAG=.*/API_IMAGE_TAG=$old_tag/" .env
   "${compose[@]}" up -d --no-deps --no-build --wait --wait-timeout 120 api
-  "${compose[@]}" exec -T nginx nginx -t && "${compose[@]}" exec -T nginx nginx -s reload
+  "${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 120 nginx
   if [[ $(curl --silent --show-error --max-time 10 -o /dev/null -w '%{http_code}' "$health_url" || true) == 200 ]]; then
     echo "Application rollback succeeded: ${current:0:12}. Database migrations were not reverted." >&2
   else
@@ -117,8 +117,8 @@ sed -i "s/^API_IMAGE_TAG=.*/API_IMAGE_TAG=$tag/" .env || rollback_and_exit 'the 
 
 "${compose[@]}" run --rm --no-deps migrate migrate || rollback_and_exit 'database migrations failed'
 "${compose[@]}" up -d --no-deps --no-build --wait --wait-timeout 120 api || rollback_and_exit 'the new API did not become healthy'
-"${compose[@]}" exec -T nginx nginx -t || rollback_and_exit 'the Nginx configuration is invalid'
-"${compose[@]}" exec -T nginx nginx -s reload || rollback_and_exit 'Nginx could not reload'
+"${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 120 nginx \
+  || rollback_and_exit 'Nginx could not be recreated with the current configuration'
 
 for attempt in {1..15}; do
   if [[ $(curl --silent --show-error --max-time 5 \

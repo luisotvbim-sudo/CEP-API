@@ -9,9 +9,9 @@ O fluxo é direto:
 3. Compila a imagem enquanto a versão atual continua atendendo.
 4. Faz um dump do PostgreSQL e valida o catálogo do backup.
 5. Para somente a API, aplica migrations e inicia a nova versão.
-6. Recarrega o Nginx e verifica `https://api.cep.lat/health/ready`.
+6. Recria o Nginx para regenerar os templates e verifica `https://api.cep.lat/health/ready`.
 
-PostgreSQL e Nginx continuam ligados. A API pode ficar indisponível por alguns segundos durante a etapa 5. Não há blue-green. Se a migration, a nova aplicação ou o health check falhar, o script retorna ao commit e à imagem anteriores; migrations já aplicadas não são revertidas automaticamente e devem permanecer compatíveis com a versão anterior. O backup fica em `/opt/cep-api/.local/backups/nightly/` e contém dados confidenciais.
+PostgreSQL continua ligado. A API pode ficar indisponível por alguns segundos durante a etapa 5, e o Nginx é trocado rapidamente na etapa 6. Não há blue-green. Se a migration, a nova aplicação ou o health check falhar, o script retorna ao commit e à imagem anteriores e também regenera o Nginx; migrations já aplicadas não são revertidas automaticamente e devem permanecer compatíveis com a versão anterior. O backup fica em `/opt/cep-api/.local/backups/nightly/` e contém dados confidenciais.
 
 O repositório é público, então a VM consulta GitHub por HTTPS sem token e sem chave SSH armazenada no GitHub. O agendamento não atualiza Ubuntu, PostgreSQL ou Nginx e não substitui backup externo ou alertas.
 
