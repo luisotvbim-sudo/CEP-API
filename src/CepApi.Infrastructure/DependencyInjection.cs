@@ -17,13 +17,17 @@ public static class DependencyInjection
     {
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
+        services.Configure<SecurityCodeOptions>(configuration.GetSection(SecurityCodeOptions.SectionName));
         var protection = services.AddDataProtection().SetApplicationName("CEP-API");
         if (configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
             protection.PersistKeysToFileSystem(new DirectoryInfo(keysPath));
 
         services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("Postgres"), npgsql =>
-                npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName)));
+            {
+                npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName);
+                npgsql.CommandTimeout(configuration.GetValue("Database:CommandTimeoutSeconds", 30));
+            }));
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {

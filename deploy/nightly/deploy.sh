@@ -12,6 +12,13 @@ if [[ -f .local/compose.pending-email.yaml ]]; then
 fi
 
 current=$(git rev-parse HEAD)
+old_image=$(docker inspect --format '{{.Config.Image}}' cep-api-production-api-1 2>/dev/null || true)
+if [[ "$old_image" == cep-api:* ]]; then
+  old_tag=${old_image#cep-api:}
+else
+  old_tag=$(sed -n 's/^API_IMAGE_TAG=//p' .env | tail -n 1)
+  old_tag=${old_tag:-${current:0:12}}
+fi
 if [[ -n $(git status --porcelain --untracked-files=no) ]]; then
   echo 'Tracked files on the VM have local changes; deployment skipped.' >&2
   exit 1
@@ -71,16 +78,32 @@ docker exec cep-api-production-postgres-1 pg_dump -U postgres -d cep_api \
 chmod 0600 "$backup_file"
 docker exec -i cep-api-production-postgres-1 pg_restore --list < "$backup_file" >/dev/null
 
+rollback_and_exit() {
+  local reason=$1
+  echo "Deployment failed: $reason. Restoring application commit ${current:0:12}." >&2
+  set +e
+  git checkout --detach "$current"
+  sed -i "s/^API_IMAGE_TAG=.*/API_IMAGE_TAG=$old_tag/" .env
+  "${compose[@]}" up -d --no-deps --no-build --wait --wait-timeout 120 api
+  "${compose[@]}" exec -T nginx nginx -t && "${compose[@]}" exec -T nginx nginx -s reload
+  if [[ $(curl --silent --show-error --max-time 10 -o /dev/null -w '%{http_code}' "$health_url" || true) == 200 ]]; then
+    echo "Application rollback succeeded: ${current:0:12}. Database migrations were not reverted." >&2
+  else
+    echo 'Application rollback did not restore public health; manual attention is required.' >&2
+  fi
+  exit 1
+}
+
 # The accepted maintenance window starts here. PostgreSQL and Nginx remain running,
 # while the API can be unavailable for a short period.
-"${compose[@]}" stop --timeout 60 api
-git checkout --detach "$target"
-sed -i "s/^API_IMAGE_TAG=.*/API_IMAGE_TAG=$tag/" .env
+"${compose[@]}" stop --timeout 60 api || rollback_and_exit 'the current API could not be stopped cleanly'
+git checkout --detach "$target" || rollback_and_exit 'the target commit could not be checked out'
+sed -i "s/^API_IMAGE_TAG=.*/API_IMAGE_TAG=$tag/" .env || rollback_and_exit 'the image tag could not be updated'
 
-"${compose[@]}" run --rm --no-deps migrate migrate
-"${compose[@]}" up -d --no-deps --no-build --wait --wait-timeout 120 api
-"${compose[@]}" exec -T nginx nginx -t
-"${compose[@]}" exec -T nginx nginx -s reload
+"${compose[@]}" run --rm --no-deps migrate migrate || rollback_and_exit 'database migrations failed'
+"${compose[@]}" up -d --no-deps --no-build --wait --wait-timeout 120 api || rollback_and_exit 'the new API did not become healthy'
+"${compose[@]}" exec -T nginx nginx -t || rollback_and_exit 'the Nginx configuration is invalid'
+"${compose[@]}" exec -T nginx nginx -s reload || rollback_and_exit 'Nginx could not reload'
 
 for attempt in {1..15}; do
   if [[ $(curl --silent --show-error --max-time 5 \
@@ -93,5 +116,4 @@ for attempt in {1..15}; do
   sleep 2
 done
 
-echo 'The new API did not pass the public health check. Manual attention is required.' >&2
-exit 1
+rollback_and_exit 'the new API did not pass the public health check'

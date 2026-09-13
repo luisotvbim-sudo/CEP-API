@@ -11,7 +11,7 @@ O fluxo é direto:
 5. Para somente a API, aplica migrations e inicia a nova versão.
 6. Recarrega o Nginx e verifica `https://api.cep.lat/health/ready`.
 
-PostgreSQL e Nginx continuam ligados. A API pode ficar indisponível por alguns segundos durante a etapa 5. Não há blue-green nem retorno automático. Se a migration ou a nova aplicação falhar, o erro fica no journal para correção manual. O backup fica em `/opt/cep-api/.local/backups/nightly/` e contém dados confidenciais.
+PostgreSQL e Nginx continuam ligados. A API pode ficar indisponível por alguns segundos durante a etapa 5. Não há blue-green. Se a migration, a nova aplicação ou o health check falhar, o script retorna ao commit e à imagem anteriores; migrations já aplicadas não são revertidas automaticamente e devem permanecer compatíveis com a versão anterior. O backup fica em `/opt/cep-api/.local/backups/nightly/` e contém dados confidenciais.
 
 O repositório é público, então a VM consulta GitHub por HTTPS sem token e sem chave SSH armazenada no GitHub. O agendamento não atualiza Ubuntu, PostgreSQL ou Nginx e não substitui backup externo ou alertas.
 

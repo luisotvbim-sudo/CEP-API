@@ -32,6 +32,10 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    command: [postgres, -c, log_connections=on, -c, log_disconnections=on, -c, log_lock_waits=on]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    stop_grace_period: 1m
     environment:
       POSTGRES_DB: cep_api
       POSTGRES_USER: postgres
@@ -60,6 +64,8 @@ services:
         target: ConnectionStrings__Postgres
       - source: jwt_private_key
         target: Jwt__PrivateKeyPem
+      - source: security_code_hmac
+        target: SecurityCodes__HmacKey
     networks: [database]
     depends_on:
       postgres: {condition: service_healthy}
@@ -72,12 +78,15 @@ services:
         target: ConnectionStrings__Postgres
       - source: jwt_private_key
         target: Jwt__PrivateKeyPem
+      - source: security_code_hmac
+        target: SecurityCodes__HmacKey
       - source: smtp_username
         target: Email__Username
       - source: smtp_password
         target: Email__Password
     networks: [frontend, database]
     mem_limit: 2g
+    pids_limit: 256
     depends_on:
       migrate: {condition: service_completed_successfully}
     healthcheck:
@@ -103,6 +112,7 @@ services:
     depends_on:
       api: {condition: service_healthy}
     mem_limit: 128m
+    pids_limit: 128
     logging: *logging
 
 networks:
@@ -123,6 +133,7 @@ secrets:
   runtime_connection: {file: '${SECRETS_DIR:-./.local/production}/runtime_connection'}
   migration_connection: {file: '${SECRETS_DIR:-./.local/production}/migration_connection'}
   jwt_private_key: {file: '${SECRETS_DIR:-./.local/production}/jwt-private.pem'}
+  security_code_hmac: {file: '${SECRETS_DIR:-./.local/production}/security-code-hmac'}
   smtp_username: {file: '${SECRETS_DIR:-./.local/production}/smtp_username'}
   smtp_password: {file: '${SECRETS_DIR:-./.local/production}/smtp_password'}
   origin_certificate: {file: '${SECRETS_DIR:-./.local/production}/origin-certificate.pem'}

@@ -129,18 +129,44 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddPolicy("auth", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
+        RateLimitPartition.GetSlidingWindowLimiter(
             $"{httpContext.Connection.RemoteIpAddress}:{httpContext.Request.Path.Value?.TrimEnd('/').ToLowerInvariant()}",
-            _ => new FixedWindowRateLimiterOptions
+            _ => new SlidingWindowRateLimiterOptions
             {
-                PermitLimit = builder.Configuration.GetValue("RateLimiting:AuthPerMinute", 60),
+                PermitLimit = builder.Configuration.GetValue("RateLimiting:AuthPerMinute", 30),
                 Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
-    options.AddPolicy("account", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+    options.AddPolicy("login", httpContext => RateLimitPartition.GetSlidingWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("RateLimiting:LoginPerMinute", 10),
+            Window = TimeSpan.FromMinutes(1), SegmentsPerWindow = 6, QueueLimit = 0, AutoReplenishment = true
+        }));
+    options.AddPolicy("recovery-request", httpContext => RateLimitPartition.GetSlidingWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("RateLimiting:RecoveryRequestsPer15Minutes", 5),
+            Window = TimeSpan.FromMinutes(15), SegmentsPerWindow = 15, QueueLimit = 0, AutoReplenishment = true
+        }));
+    options.AddPolicy("recovery-verify", httpContext => RateLimitPartition.GetSlidingWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("RateLimiting:RecoveryAttemptsPer15Minutes", 10),
+            Window = TimeSpan.FromMinutes(15), SegmentsPerWindow = 15, QueueLimit = 0, AutoReplenishment = true
+        }));
+    options.AddPolicy("account", httpContext => RateLimitPartition.GetSlidingWindowLimiter(
         httpContext.User.FindFirstValue("sub") ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = builder.Configuration.GetValue("RateLimiting:AccountPerMinute", 10),
+            Window = TimeSpan.FromMinutes(1), SegmentsPerWindow = 6, QueueLimit = 0, AutoReplenishment = true
+        }));
 });
 
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
@@ -205,6 +231,7 @@ static void ValidateProductionConfiguration(WebApplicationBuilder builder)
 
     var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>();
     var email = builder.Configuration.GetSection(EmailOptions.SectionName).Get<EmailOptions>();
+    var securityCodes = builder.Configuration.GetSection(SecurityCodeOptions.SectionName).Get<SecurityCodeOptions>();
     if (string.IsNullOrWhiteSpace(jwt?.PrivateKeyPem))
         throw new InvalidOperationException("Jwt:PrivateKeyPem is required in Production.");
     if (string.IsNullOrWhiteSpace(email?.Host) || string.IsNullOrWhiteSpace(email.FromAddress))
@@ -213,6 +240,15 @@ static void ValidateProductionConfiguration(WebApplicationBuilder builder)
         throw new InvalidOperationException("SMTP TLS is required in Production.");
     if (string.IsNullOrWhiteSpace(builder.Configuration["DataProtection:KeysPath"]))
         throw new InvalidOperationException("DataProtection:KeysPath is required in Production for the durable email outbox.");
+    try
+    {
+        if (Convert.FromBase64String(securityCodes?.HmacKey?.Trim() ?? string.Empty).Length < 32)
+            throw new InvalidOperationException("SecurityCodes:HmacKey must contain at least 32 random bytes.");
+    }
+    catch (FormatException exception)
+    {
+        throw new InvalidOperationException("SecurityCodes:HmacKey must be valid Base64.", exception);
+    }
     if (jwt.KeyId == "development-key" || jwt.AccessTokenMinutes is < 1 or > 15 || jwt.PluginGrantHours is < 1 or > 72)
         throw new InvalidOperationException("Configure a production Jwt:KeyId and bounded token lifetimes.");
 }

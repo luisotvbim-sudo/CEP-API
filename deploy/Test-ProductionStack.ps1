@@ -23,6 +23,7 @@ Write-TestSecret 'bootstrap_email' 'smoke@example.test'
 Write-TestSecret 'bootstrap_password' $adminPassword
 Write-TestSecret 'smtp_username' ''
 Write-TestSecret 'smtp_password' ''
+Write-TestSecret 'security-code-hmac' ([Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)))
 $rsa = [Security.Cryptography.RSA]::Create(3072)
 try { Write-TestSecret 'jwt-private.pem' $rsa.ExportRSAPrivateKeyPem() } finally { $rsa.Dispose() }
 $tlsRsa = [Security.Cryptography.RSA]::Create(2048)
@@ -99,7 +100,7 @@ try {
     & docker @composeArgs down --volumes --remove-orphans
     # Remove only the secret files created by this test; never recursively delete a computed path.
     foreach ($name in @('postgres_password','owner_password','runtime_password','runtime_connection','migration_connection',
-        'bootstrap_email','bootstrap_password','smtp_username','smtp_password','jwt-private.pem','origin-certificate.pem','origin-private.key')) {
+        'bootstrap_email','bootstrap_password','smtp_username','smtp_password','security-code-hmac','jwt-private.pem','origin-certificate.pem','origin-private.key')) {
         Remove-Item -LiteralPath (Join-Path $testPath $name) -ErrorAction SilentlyContinue
     }
 }

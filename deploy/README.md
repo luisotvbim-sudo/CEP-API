@@ -19,6 +19,7 @@ Arquivos esperados:
 | `runtime_connection` | `Host=postgres;Database=cep_api;Username=cep_api_runtime;Password=...` |
 | `jwt-private.pem` | Chave privada RSA, preferencialmente 3072 bits, persistente |
 | `smtp_username`, `smtp_password` | Credenciais do provedor SMTP; arquivos vazios somente para relay autenticado por outro mecanismo |
+| `security-code-hmac` | Chave aleatória Base64 de pelo menos 32 bytes para proteger códigos curtos no banco |
 | `origin-certificate.pem`, `origin-private.key` | Certificado HTTPS e chave para o domínio da API |
 
 As senhas nas conexões precisam coincidir com seus respectivos arquivos. Gere senhas sem caracteres especiais de connection string, por exemplo 32 bytes aleatórios em hexadecimal. Não as escreva no histórico de comandos. Os arquivos são montados somente nos serviços que precisam deles.

@@ -25,19 +25,19 @@ public sealed class SecurityTests(SecurityFixture fixture) : IClassFixture<Secur
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Old_reset_codes_cannot_return_after_recovery_and_all_old_access_is_revoked()
+    public async Task Repeated_reset_requests_keep_the_current_code_and_recovery_revokes_old_access()
     {
         var user = await fixture.CreateUserAsync();
         using var client = fixture.Client();
         var tokens = await fixture.LoginAsync(client, user.Email!);
-        var oldCode = await fixture.ResetCodeAsync(client, user.Email!);
-        var newCode = await fixture.ResetCodeAsync(client, user.Email!);
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password/reset",
-            new ResetPasswordRequest(user.Email!, oldCode, SecurityFixture.NewPassword), Ct)).StatusCode);
+        var firstCode = await fixture.ResetCodeAsync(client, user.Email!);
+        var repeatedCode = await fixture.ResetCodeAsync(client, user.Email!);
+        Assert.Equal(firstCode, repeatedCode);
+        Assert.Equal(1, fixture.Email.PasswordResetDeliveries[user.Email!]);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/password/reset",
-            new ResetPasswordRequest(user.Email!, newCode, SecurityFixture.NewPassword), Ct)).StatusCode);
+            new ResetPasswordRequest(user.Email!, firstCode, SecurityFixture.NewPassword), Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password/reset",
-            new ResetPasswordRequest(user.Email!, oldCode, SecurityFixture.Password), Ct)).StatusCode);
+            new ResetPasswordRequest(user.Email!, firstCode, SecurityFixture.Password), Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/v1/auth/refresh", new RefreshRequest(tokens.RefreshToken), Ct)).StatusCode);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/me", Ct)).StatusCode);
@@ -210,6 +210,10 @@ public sealed class SecurityFixture : IAsyncLifetime
             builder.UseSetting("ConnectionStrings:Postgres", _postgres.GetConnectionString());
             builder.UseSetting("EmailOutbox:Enabled", "false");
             builder.UseSetting("RateLimiting:AuthPerMinute", "1000");
+            builder.UseSetting("RateLimiting:LoginPerMinute", "1000");
+            builder.UseSetting("RateLimiting:RecoveryRequestsPer15Minutes", "1000");
+            builder.UseSetting("RateLimiting:RecoveryAttemptsPer15Minutes", "1000");
+            builder.UseSetting("RateLimiting:AccountPerMinute", "1000");
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IEmailSender>();
@@ -310,6 +314,7 @@ public sealed class TestEmailSender : IEmailSender
 {
     public bool Fail { get; set; }
     public ConcurrentDictionary<string, string> ResetCodes { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public ConcurrentDictionary<string, int> PasswordResetDeliveries { get; } = new(StringComparer.OrdinalIgnoreCase);
     public ConcurrentDictionary<string, string> InvitationCodes { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Task SendInvitationAsync(string email, string organizationName, string code, DateTimeOffset expiresAt, CancellationToken cancellationToken)
     {
@@ -321,6 +326,7 @@ public sealed class TestEmailSender : IEmailSender
     {
         if (Fail) throw new IOException("Simulated SMTP failure");
         ResetCodes[email] = code;
+        PasswordResetDeliveries.AddOrUpdate(email, 1, (_, count) => count + 1);
         return Task.CompletedTask;
     }
 }

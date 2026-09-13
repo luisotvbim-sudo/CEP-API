@@ -3,3 +3,5 @@ Dockerfile text eol=lf
 *.template text eol=lf
 deploy/nightly/*.service text eol=lf
 deploy/nightly/*.timer text eol=lf
+deploy/monitoring/*.service text eol=lf
+deploy/monitoring/*.timer text eol=lf

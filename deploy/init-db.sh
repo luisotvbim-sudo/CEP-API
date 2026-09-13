@@ -6,6 +6,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
   --set=runtime_password="$(cat /run/secrets/runtime_password)" <<'SQL'
 CREATE ROLE cep_api_owner LOGIN PASSWORD :'owner_password' NOSUPERUSER NOCREATEDB NOCREATEROLE;
 CREATE ROLE cep_api_runtime LOGIN PASSWORD :'runtime_password' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+ALTER ROLE cep_api_runtime SET statement_timeout = '30s';
+ALTER ROLE cep_api_runtime SET lock_timeout = '10s';
+ALTER ROLE cep_api_runtime SET idle_in_transaction_session_timeout = '60s';
 ALTER DATABASE cep_api OWNER TO cep_api_owner;
 REVOKE ALL ON DATABASE cep_api FROM PUBLIC;
 GRANT CONNECT ON DATABASE cep_api TO cep_api_runtime;

@@ -1,0 +1,16 @@
+[Unit]
+Description=Check CEP API containers, public readiness and disk usage
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/cep-api-healthcheck
+TimeoutStartSec=30s
+UMask=0077
+Environment=HEALTH_URL=https://api.cep.lat/health/ready
+Environment=MAX_DISK_PERCENT=85
+StandardOutput=journal
+StandardError=journal

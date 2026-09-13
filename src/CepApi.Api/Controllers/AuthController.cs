@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Identity;
@@ -26,8 +27,10 @@ public sealed class AuthController(
     IAuditService audit,
     IOptions<JwtOptions> jwtOptions) : ApiControllerBase
 {
+    private static readonly TimeSpan MinimumRecoveryResponseTime = TimeSpan.FromMilliseconds(250);
+
     [HttpPost("login")]
-    [EnableRateLimiting("auth")]
+    [EnableRateLimiting("login")]
     public async Task<ActionResult<TokenResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
     {
         var normalizedEmail = userManager.NormalizeEmail(request.Email);
@@ -211,42 +214,69 @@ public sealed class AuthController(
     }
 
     [HttpPost("password/forgot")]
-    [EnableRateLimiting("auth")]
+    [EnableRateLimiting("recovery-request")]
     public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request, CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
         var normalizedEmail = userManager.NormalizeEmail(request.Email);
         var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken);
         if (user is { Status: UserStatus.Active })
         {
             await using var transaction = await db.BeginForUserAsync(user.Id, cancellationToken);
-            if (!await db.Users.AnyAsync(x => x.Id == user.Id && x.Status == UserStatus.Active, cancellationToken))
-                return Accepted();
-            var now = clock.UtcNow;
-            await db.InvalidateResetCodesAsync(user.Id, now, cancellationToken);
-            var code = codeService.GeneratePasswordResetCode();
-            db.PasswordResets.Add(new PasswordReset
+            if (await db.Users.AnyAsync(x => x.Id == user.Id && x.Status == UserStatus.Active, cancellationToken))
             {
-                UserId = user.Id,
-                CodeHash = codeService.Hash(code),
-                CreatedAt = now,
-                ExpiresAt = now.AddMinutes(15)
-            });
-            emailQueue.PasswordReset(user.Email!, code, now.AddMinutes(15));
-            await db.SaveChangesAsync(cancellationToken);
+                var now = clock.UtcNow;
+                var activeResetExists = await db.PasswordResets.AsNoTracking().AnyAsync(x =>
+                    x.UserId == user.Id && x.UsedAt == null && x.ExpiresAt > now, cancellationToken);
+                if (!activeResetExists)
+                {
+                    await db.InvalidateResetCodesAsync(user.Id, now, cancellationToken);
+                    var code = codeService.GeneratePasswordResetCode();
+                    var expiresAt = now.AddMinutes(15);
+                    db.PasswordResets.Add(new PasswordReset
+                    {
+                        UserId = user.Id,
+                        CodeHash = codeService.Hash(code),
+                        CreatedAt = now,
+                        ExpiresAt = expiresAt
+                    });
+                    emailQueue.PasswordReset(user.Email!, code, expiresAt);
+                    await audit.WriteAsync("auth.password_reset_requested", user.OrganizationId, targetUserId: user.Id,
+                        ipAddress: IpAddress, cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    await audit.WriteAsync("auth.password_reset_request_suppressed", user.OrganizationId, targetUserId: user.Id,
+                        ipAddress: IpAddress, cancellationToken: cancellationToken);
+                }
+            }
             await transaction.CommitAsync(cancellationToken);
         }
+        else
+        {
+            await audit.WriteAsync("auth.password_reset_request_suppressed",
+                details: new { reason = "unknown_or_inactive" }, ipAddress: IpAddress, cancellationToken: cancellationToken);
+        }
+
+        await PadRecoveryResponseAsync(started, cancellationToken);
         return Accepted();
     }
 
     [HttpPost("password/reset")]
-    [EnableRateLimiting("auth")]
+    [EnableRateLimiting("recovery-verify")]
     public async Task<IActionResult> ResetPassword(ResetPasswordRequest request, CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
         var normalizedEmail = userManager.NormalizeEmail(request.Email);
         var userId = await db.Users.AsNoTracking().Where(x => x.NormalizedEmail == normalizedEmail)
             .Select(x => (Guid?)x.Id).SingleOrDefaultAsync(cancellationToken);
         if (userId is null)
+        {
+            await audit.WriteAsync("auth.password_reset_failed", details: new { reason = "invalid_or_expired" },
+                ipAddress: IpAddress, cancellationToken: cancellationToken);
+            await PadRecoveryResponseAsync(started, cancellationToken);
             return ApiProblem(StatusCodes.Status400BadRequest, "Reset code is invalid or expired.", "invalid_reset_code");
+        }
 
         await using var transaction = await db.BeginForUserAsync(userId.Value, cancellationToken);
         var user = await db.Users.SingleAsync(x => x.Id == userId, cancellationToken);
@@ -256,12 +286,15 @@ public sealed class AuthController(
         var now = clock.UtcNow;
         if (reset is null || reset.ExpiresAt <= now || reset.FailedAttempts >= 5 || !codeService.Verify(request.Code, reset.CodeHash))
         {
-            if (reset is not null)
+            if (reset is not null && reset.ExpiresAt > now && reset.FailedAttempts < 5)
             {
                 await db.PasswordResets.Where(x => x.Id == reset.Id)
                     .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.FailedAttempts, x => x.FailedAttempts + 1), cancellationToken);
             }
+            await audit.WriteAsync("auth.password_reset_failed", user.OrganizationId, targetUserId: user.Id,
+                details: new { reason = "invalid_or_expired" }, ipAddress: IpAddress, cancellationToken: cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            await PadRecoveryResponseAsync(started, cancellationToken);
             return ApiProblem(StatusCodes.Status400BadRequest, "Reset code is invalid or expired.", "invalid_reset_code");
         }
 
@@ -322,4 +355,11 @@ public sealed class AuthController(
 
     private static string? Truncate(string? value, int maxLength)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim()[..Math.Min(value.Trim().Length, maxLength)];
+
+    private static async Task PadRecoveryResponseAsync(long started, CancellationToken cancellationToken)
+    {
+        var remaining = MinimumRecoveryResponseTime - Stopwatch.GetElapsedTime(started);
+        if (remaining > TimeSpan.Zero)
+            await Task.Delay(remaining, cancellationToken);
+    }
 }
