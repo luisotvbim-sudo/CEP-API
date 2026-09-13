@@ -26,6 +26,8 @@ As senhas nas conexões precisam coincidir com seus respectivos arquivos. Gere s
 
 Em Compose local, permissões de secrets baseados em arquivos dependem do bind mount: os processos precisam conseguir ler os arquivos. Uma opção é arquivos legíveis dentro do contêiner (`0444`) sob diretório do host protegido (`0700`); outra é ajustar proprietário/grupo por serviço. Teste a leitura como UID 1654 sem imprimir o conteúdo. Compose não é um cofre de segredos.
 
+O atualizador noturno detecta o GID do usuário não privilegiado na imagem e ajusta somente `security-code-hmac` para `root:<gid>` com modo `0640` antes de iniciar a janela de manutenção. Na primeira inicialização manual, aplique uma dessas duas estratégias antes de executar `migrate`.
+
 O script `init-db.sh` cria os papéis apenas no primeiro uso de um volume vazio. `cep_api_owner` possui o schema e pode migrar; `cep_api_runtime` tem acesso aos dados, mas não é superusuário nem pode criar tabelas. Não altere senhas apenas nos arquivos esperando que um volume existente seja atualizado.
 
 Os volumes `postgres_data` e `protection_keys` sobrevivem à recriação de contêineres. Faça backup dos dados, das chaves de Data Protection e dos segredos de assinatura para armazenamento fora da VM; teste restauração. As chaves de Data Protection ficam protegidas pelas permissões do volume, sem criptografia adicional de arquivo neste Compose. Perder essas chaves impede ler e-mails ainda pendentes. A fila armazena payload protegido, remove mensagens entregues/expiradas e faz retentativas com intervalo crescente. Um crash após aceitação do SMTP pode produzir e-mail duplicado com o mesmo código.

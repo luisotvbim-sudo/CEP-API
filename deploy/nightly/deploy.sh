@@ -70,6 +70,21 @@ tag=${target:0:12}
 git archive "$target" | tar -x -C "$source_dir"
 docker build -t "cep-api:$tag" "$source_dir"
 
+# File-backed Compose secrets keep their host ownership and permissions. Grant
+# the non-root application group read access without making the HMAC key public.
+hmac_file="$app_dir/.local/production/security-code-hmac"
+if [[ ! -s "$hmac_file" ]]; then
+  echo 'The security-code-hmac secret is missing or empty; deployment skipped.' >&2
+  exit 1
+fi
+app_gid=$(docker run --rm --entrypoint id "cep-api:$tag" -g)
+if [[ ! "$app_gid" =~ ^[0-9]+$ ]]; then
+  echo 'Could not determine the application group ID; deployment skipped.' >&2
+  exit 1
+fi
+chown root:"$app_gid" "$hmac_file"
+chmod 0640 "$hmac_file"
+
 backup_dir="$app_dir/.local/backups/nightly"
 install -d -m 0700 "$backup_dir"
 backup_file="$backup_dir/before-$(date -u +%Y%m%dT%H%M%SZ)-${current:0:12}.dump"
