@@ -19,6 +19,8 @@ A primeira etapa do backend implementa o cadastro de equipes e os vínculos de m
 
 A importação do Monday e do Ponto VR Mais, calendário, regras de tolerância e conciliação diária serão adicionados nas próximas etapas após validar as decisões de integração registradas na [especificação funcional](docs/conciliacao-horas/especificacao-funcional.md).
 
+Para continuar o desenvolvimento em outra sessão, consulte o [contexto técnico e operacional do backend](docs/conciliacao-horas/handoff-backend.md).
+
 ## Início rápido com containers
 
 Este Compose é para desenvolvimento. Para a VM, use exclusivamente [compose.production.yaml](compose.production.yaml) e siga [o guia de produção](deploy/README.md).
