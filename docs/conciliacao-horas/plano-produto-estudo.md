@@ -432,6 +432,8 @@ O contrato das integrações deve ser acompanhado ao longo do tempo. O estudo ob
 
 ### 14.2 Relação com a documentação existente
 
+Para continuar em outro chat, começar pelo [contexto para o próximo agente](contexto-para-proximo-agente.md), que consolida a evolução das decisões, a situação do Git e as referências seguras das integrações. O [índice da documentação](README.md) apresenta a ordem de leitura.
+
 Este plano complementa a [especificação funcional](especificacao-funcional.md) e o [manual de uso proposto](manual.html). Ambos permanecem referências da visão mais ampla; suas telas e regras não representam funcionalidades implementadas. Este novo estudo não reescreve automaticamente os documentos anteriores.
 
 Para preparar a próxima versão da especificação, reconciliar as seguintes mudanças:
