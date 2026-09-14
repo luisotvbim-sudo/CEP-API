@@ -1,6 +1,6 @@
-# CEP Plugins API
+# CEP API
 
-API multiempresa para administrar usuários dos plugins Revit e ZWCAD. A solução usa ASP.NET Core 10, PostgreSQL, ASP.NET Core Identity, access tokens JWT, refresh tokens rotativos e grants offline RS256 de 72 horas.
+Backend multiempresa para administrar usuários dos plugins Revit e ZWCAD e a aplicação de conciliação de horas. A solução usa ASP.NET Core 10, PostgreSQL, ASP.NET Core Identity, access tokens JWT, refresh tokens rotativos e grants offline RS256 de 72 horas.
 
 ## Recursos
 
@@ -10,7 +10,14 @@ API multiempresa para administrar usuários dos plugins Revit e ZWCAD. A soluç�
 - Acesso separado aos produtos Revit e ZWCAD.
 - Sessões revogáveis, lockout, rate limiting e detecção de reutilização de refresh token.
 - Auditoria administrativa, JWKS público, Swagger e health checks.
+- Equipes de controle de ponto e vínculos efetivos de membros e gestores.
 - Migrations explícitas, testes unitários e fluxo de integração com PostgreSQL real.
+
+## Controle de ponto
+
+A primeira etapa do backend implementa o cadastro de equipes e os vínculos de membros e gestores com vigência e histórico. Os endpoints ficam em `api/v1/organization/time-control/teams` e são restritos ao administrador da organização. O servidor impede nomes duplicados, vínculos sobrepostos e associação de usuários de outra organização.
+
+A importação do Monday e do Ponto VR Mais, calendário, regras de tolerância e conciliação diária serão adicionados nas próximas etapas após validar as decisões de integração registradas na [especificação funcional](docs/conciliacao-horas/especificacao-funcional.md).
 
 ## Início rápido com containers
 

@@ -17,6 +17,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<EmailOutboxMessage> EmailOutbox => Set<EmailOutboxMessage>();
     public DbSet<AllowedEmailDomain> AllowedEmailDomains => Set<AllowedEmailDomain>();
+    public DbSet<WorkforceTeam> WorkforceTeams => Set<WorkforceTeam>();
+    public DbSet<TeamAssignment> TeamAssignments => Set<TeamAssignment>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -111,6 +113,29 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.Property(x => x.IpAddress).HasMaxLength(64);
             entity.HasIndex(x => new { x.OrganizationId, x.CreatedAt });
             entity.HasIndex(x => x.CreatedAt);
+        });
+
+        builder.Entity<WorkforceTeam>(entity =>
+        {
+            entity.ToTable("workforce_teams");
+            entity.Property(x => x.Name).HasMaxLength(120);
+            entity.Property(x => x.NormalizedName).HasMaxLength(120);
+            entity.HasIndex(x => new { x.OrganizationId, x.NormalizedName }).IsUnique();
+            entity.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<TeamAssignment>(entity =>
+        {
+            entity.ToTable("team_assignments", table => table.HasCheckConstraint(
+                "ck_team_assignments_effective_period", "\"EffectiveTo\" IS NULL OR \"EffectiveTo\" >= \"EffectiveFrom\""));
+            entity.Property(x => x.Role).HasConversion<string>().HasMaxLength(32);
+            entity.HasIndex(x => new { x.TeamId, x.UserId, x.Role, x.EffectiveFrom });
+            entity.HasIndex(x => new { x.UserId, x.EffectiveFrom, x.EffectiveTo });
+            entity.HasOne(x => x.Team).WithMany(x => x.Assignments).HasForeignKey(x => x.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

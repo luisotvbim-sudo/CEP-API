@@ -26,7 +26,7 @@ public sealed class ApiWorkflowTests
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
     [Fact]
-    public async Task Complete_invitation_login_and_product_grant_workflow_is_isolated_and_signed()
+    public async Task Complete_invitation_time_control_and_product_grant_workflow_is_isolated_and_signed()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         PostgreSqlContainer postgres;
@@ -89,6 +89,50 @@ public sealed class ApiWorkflowTests
             "correct horse battery staple", new ClientInfo("revit", "2026.1", "install-1")), cancellationToken);
         acceptUser.EnsureSuccessStatusCode();
         var userTokens = (await acceptUser.Content.ReadFromJsonAsync<TokenResponse>(Json, cancellationToken))!;
+
+        UseToken(client, adminTokens.AccessToken);
+        var createTeam = await client.PostAsJsonAsync("/api/v1/organization/time-control/teams",
+            new CreateWorkforceTeamRequest("Projetos"), cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, createTeam.StatusCode);
+        var team = (await createTeam.Content.ReadFromJsonAsync<WorkforceTeamResponse>(Json, cancellationToken))!;
+        Assert.Equal("Projetos", team.Name);
+
+        var effectiveFrom = new DateOnly(2026, 1, 1);
+        var createAssignment = await client.PostAsJsonAsync($"/api/v1/organization/time-control/teams/{team.Id}/assignments",
+            new CreateTeamAssignmentRequest(userTokens.User.Id, TeamAssignmentRole.Member, effectiveFrom, null), cancellationToken);
+        Assert.Equal(HttpStatusCode.Created, createAssignment.StatusCode);
+
+        var duplicateAssignment = await client.PostAsJsonAsync($"/api/v1/organization/time-control/teams/{team.Id}/assignments",
+            new CreateTeamAssignmentRequest(userTokens.User.Id, TeamAssignmentRole.Member, effectiveFrom, null), cancellationToken);
+        Assert.Equal(HttpStatusCode.OK, duplicateAssignment.StatusCode);
+
+        var overlappingAssignment = await client.PostAsJsonAsync($"/api/v1/organization/time-control/teams/{team.Id}/assignments",
+            new CreateTeamAssignmentRequest(userTokens.User.Id, TeamAssignmentRole.Member, new DateOnly(2026, 2, 1), null), cancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, overlappingAssignment.StatusCode);
+
+        var assignmentsResponse = await client.GetAsync(
+            $"/api/v1/organization/time-control/teams/{team.Id}/assignments?asOf=2026-03-01", cancellationToken);
+        assignmentsResponse.EnsureSuccessStatusCode();
+        var assignments = (await assignmentsResponse.Content.ReadFromJsonAsync<TeamAssignmentResponse[]>(Json, cancellationToken))!;
+        var assignment = Assert.Single(assignments);
+        Assert.Equal(userTokens.User.Id, assignment.UserId);
+
+        UseToken(client, userTokens.AccessToken);
+        var forbiddenTeams = await client.GetAsync("/api/v1/organization/time-control/teams", cancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenTeams.StatusCode);
+
+        UseToken(client, adminTokens.AccessToken);
+        var endAssignment = await client.PatchAsJsonAsync(
+            $"/api/v1/organization/time-control/teams/{team.Id}/assignments/{assignment.Id}/end",
+            new EndTeamAssignmentRequest(new DateOnly(2026, 6, 30)), cancellationToken);
+        endAssignment.EnsureSuccessStatusCode();
+
+        var endedAssignmentsResponse = await client.GetAsync(
+            $"/api/v1/organization/time-control/teams/{team.Id}/assignments?asOf=2026-07-01", cancellationToken);
+        endedAssignmentsResponse.EnsureSuccessStatusCode();
+        var endedAssignments = (await endedAssignmentsResponse.Content.ReadFromJsonAsync<TeamAssignmentResponse[]>(Json, cancellationToken))!;
+        Assert.Empty(endedAssignments);
+
         UseToken(client, userTokens.AccessToken);
 
         var revitGrantResponse = await client.PostAsJsonAsync("/api/v1/plugin/grants",
@@ -110,7 +154,7 @@ public sealed class ApiWorkflowTests
 
         var openApi = await client.GetAsync("/swagger/v1/swagger.json", cancellationToken);
         openApi.EnsureSuccessStatusCode();
-        Assert.Contains("CEP Plugins API", await openApi.Content.ReadAsStringAsync(cancellationToken), StringComparison.Ordinal);
+        Assert.Contains("CEP API", await openApi.Content.ReadAsStringAsync(cancellationToken), StringComparison.Ordinal);
     }
 
     private static async Task SeedDatabaseAsync(IServiceProvider services, CancellationToken cancellationToken)
