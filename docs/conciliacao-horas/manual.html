@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Manual funcional proposto da aplicação de conciliação de horas Monday e Ponto VR Mais, com jornadas por perfil e orientação para arquitetura.">
+  <title>Conciliação de horas · Manual funcional</title>
+  <style>
+    :root { --ink:#2b2b2b; --muted:#626262; --paper:#f5f5f5; --line:#dedede; --accent:#b54708; --nav:#292929; --radius:16px; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; scroll-padding-top:24px; }
+    body { margin:0; color:var(--ink); background:var(--paper); font:15px/1.65 "Segoe UI",Arial,sans-serif; }
+    a { color:var(--accent); text-underline-offset:3px; }
+    button,input { font:inherit; }
+    button { cursor:pointer; }
+    :focus-visible { outline:3px solid #b54708; outline-offset:4px; }
+    [hidden] { display:none !important; }
+    .skip { position:fixed; top:-90px; left:18px; z-index:20; padding:10px 18px; background:white; border-radius:8px; }
+    .skip:focus { top:14px; }
+    .sidebar { width:252px; position:fixed; inset:0 auto 0 0; padding:28px 20px 20px; display:flex; flex-direction:column; background:var(--nav); color:white; }
+    .brand { display:flex; gap:11px; align-items:center; font-size:17px; font-weight:700; line-height:1.3; }
+    .brand-mark { width:35px; height:35px; display:flex; gap:4px; align-items:center; transform:rotate(15deg); }
+    .brand-mark i { width:8px; height:25px; background:#f47c20; border-radius:6px; }
+    .brand-mark i:nth-child(2) { height:17px; background:#a6a6a6; }
+    .brand-mark i:nth-child(3) { height:30px; background:#ffba85; }
+    .sidebar .eyebrow { color:#bdbdbd; margin:13px 0 20px; font-size:11px; }
+    .sidebar nav { overflow-y:auto; flex:1; padding-right:4px; }
+    .sidebar nav a { display:block; color:#e0e0e0; font-size:13px; text-decoration:none; padding:8px 10px; margin:2px 0; border-radius:7px; border-left:3px solid transparent; }
+    .sidebar nav a:hover,.sidebar nav a[aria-current="location"] { background:#3d3d3d; color:white; border-left-color:#f47c20; }
+    .sidebar nav a small { color:#bdbdbd; display:inline-block; width:24px; }
+    .sidebar-foot { padding:16px 10px 0; border-top:1px solid #4d4d4d; margin-top:16px; font-size:12px; color:#cccccc; }
+    .sidebar-foot a { color:#ffba85; }
+    main { max-width:1460px; margin-left:252px; padding:36px 48px 60px; }
+    .eyebrow { text-transform:uppercase; letter-spacing:1.8px; font-size:11px; font-weight:700; }
+    .hero { background:white; border:1px solid var(--line); border-radius:22px; overflow:hidden; margin-bottom:22px; }
+    .hero-top { height:6px; background:linear-gradient(90deg,#f47c20 0 48%,#858585 48% 76%,#c6c6c6 76%); }
+    .hero-body { padding:30px 34px; }
+    .hero .eyebrow { color:var(--accent); }
+    h1 { font-size:clamp(29px,3.4vw,44px); line-height:1.15; letter-spacing:-1.2px; margin:14px 0 16px; max-width:800px; }
+    .lead { max-width:800px; color:var(--muted); font-size:17px; }
+    .meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:20px 0 0; }
+    .pill { border-radius:20px; padding:4px 11px; background:#eeeeee; color:#595959; font-size:12px; font-weight:600; display:inline-block; }
+    .pill.proposal { background:#fff0e5; color:#99400c; }
+    .toolbar { background:white; border:1px solid var(--line); border-radius:var(--radius); padding:18px 22px; margin-bottom:26px; }
+    .search-row { display:flex; gap:12px; align-items:end; }
+    .search-field { flex:1; }
+    label { display:block; font-size:12px; font-weight:700; margin-bottom:6px; }
+    input[type="search"] { width:100%; border:1px solid #bdbdbd; border-radius:8px; background:#fcfcfc; padding:10px 12px; color:var(--ink); }
+    .button { padding:10px 15px; border:1px solid #bdbdbd; background:white; color:var(--ink); border-radius:8px; text-decoration:none; display:inline-block; font-weight:600; font-size:13px; white-space:nowrap; }
+    .button:hover { background:#f2f2f2; }
+    .button.primary { background:var(--accent); color:white; border-color:var(--accent); }
+    .role-row { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:16px; }
+    .role-label { font-size:12px; color:var(--muted); margin-right:4px; }
+    .role-button { border:1px solid var(--line); background:white; color:var(--muted); padding:6px 12px; border-radius:20px; font-size:12px; }
+    .role-button[aria-pressed="true"] { background:#fff0e5; border-color:#e39860; color:#99400c; font-weight:700; }
+    .search-status { color:var(--muted); font-size:12px; margin:12px 0 0; }
+    .chapter { margin:0 0 24px; background:white; border:1px solid var(--line); border-radius:var(--radius); padding:28px 32px; scroll-margin-top:20px; }
+    .chapter-head { display:flex; align-items:start; gap:13px; margin-bottom:18px; }
+    .chapter-number { display:inline-grid; place-items:center; background:#fff0e5; border:1px solid #f0cfb7; color:#99400c; min-width:34px; height:34px; border-radius:9px; font-size:12px; font-weight:700; margin-top:3px; }
+    h2 { font-size:23px; line-height:1.3; margin:0; letter-spacing:-.4px; }
+    .subhead { color:var(--muted); margin:4px 0 0; font-size:13px; }
+    h3 { font-size:17px; margin:23px 0 9px; }
+    p { margin:10px 0 14px; }
+    ul,ol { padding-left:23px; margin:12px 0 18px; }
+    li { padding-left:3px; margin:7px 0; }
+    li strong { font-weight:650; }
+    .notice { background:#fff4eb; border-left:4px solid #f47c20; border-radius:0 9px 9px 0; padding:13px 17px; margin:18px 0; font-size:14px; }
+    .notice.warn { background:#fff0e5; border-left-color:#b54708; }
+    .notice.good { background:#f2f2f2; border-left-color:#737373; }
+    .notice p:last-child { margin-bottom:0; }
+    .notice p:first-child { margin-top:0; }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:13px; margin:18px 0; }
+    .card { border:1px solid var(--line); border-radius:12px; padding:18px; background:#fcfcfc; }
+    .card h3 { margin:0 0 8px; font-size:15px; }
+    .card p { font-size:13px; color:var(--muted); margin:0 0 10px; }
+    .card a { font-size:13px; font-weight:650; }
+    .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:10px; margin:16px 0; }
+    table { border-collapse:collapse; width:100%; font-size:13px; text-align:left; }
+    th,td { padding:11px 13px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { background:#f4f4f4; font-size:12px; font-weight:700; }
+    tr:last-child td,tr:last-child th { border-bottom:0; }
+    tbody tr:nth-child(even) { background:#fcfcfc; }
+    caption { text-align:left; padding:11px 13px; color:var(--muted); font-size:12px; background:#fff; }
+    .num { white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .status { display:inline-block; border-radius:5px; padding:3px 8px; font-size:11px; font-weight:700; white-space:nowrap; }
+    .status.reconciled { color:#404040; background:#e8e8e8; }
+    .status.critical { color:#ffffff; background:#b54708; }
+    .status.attention { color:#8a3909; background:#ffe7d3; }
+    .status.pending { color:#505050; background:#ededed; }
+    .status.neutral { color:#626262; background:#f1f1f1; }
+    .mock { border:1px solid #d6d6d6; border-radius:12px; overflow:hidden; background:#fafafa; margin:20px 0; }
+    .mock-label { padding:8px 14px; background:#ededed; color:#626262; font-size:11px; letter-spacing:.3px; }
+    .mock-body { padding:20px; }
+    .mock-title { display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:8px; }
+    .mock-title strong { font-size:17px; }
+    .mock-filter { font-size:11px; background:white; border:1px solid var(--line); padding:5px 10px; border-radius:6px; }
+    .mock-meta { color:var(--muted); font-size:11px; }
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin:16px 0; }
+    .stat { border:1px solid var(--line); background:white; border-top:3px solid #858585; border-radius:8px; padding:12px; }
+    .stat:nth-child(2) { border-top-color:#f47c20; }
+    .stat:nth-child(3) { border-top-color:#a6a6a6; }
+    .stat:nth-child(4) { border-top-color:#b54708; }
+    .stat span { display:block; font-size:10px; color:var(--muted); }
+    .stat b { font-size:21px; font-weight:700; line-height:1.6; font-variant-numeric:tabular-nums; }
+    .chart { background:white; border:1px solid var(--line); border-radius:9px; padding:14px; margin:14px 0; }
+    .chart svg { display:block; width:100%; height:auto; max-height:310px; }
+    .chart-legend { display:flex; gap:18px; flex-wrap:wrap; color:var(--muted); font-size:12px; }
+    .legend-line { display:inline-block; width:19px; height:3px; vertical-align:middle; margin-right:6px; background:#626262; }
+    .legend-line.monday { background:#c4510a; }
+    figcaption,.caption { font-size:12px; color:var(--muted); margin:10px 0 0; }
+    .mock figure { margin:0; }
+    .flow { display:flex; flex-wrap:wrap; align-items:center; gap:9px; padding:16px; background:#f6f6f6; border:1px solid var(--line); border-radius:10px; font-size:12px; }
+    .flow span { background:white; padding:7px 10px; border:1px solid var(--line); border-radius:6px; }
+    .flow b { color:#b54708; }
+    .quote { border:1px solid #e3d3c7; background:#fff7f0; border-radius:10px; padding:15px 18px; margin:15px 0; color:#594d45; font-size:14px; }
+    .calendar { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:7px; margin:15px 0; }
+    .day { border:1px solid var(--line); border-top:4px solid #858585; background:white; border-radius:7px; padding:12px 9px; }
+    .day.alert { border-top-color:#b54708; }
+    .day strong,.day span { display:block; }
+    .day strong { font-size:12px; }
+    .day span { font-size:11px; color:var(--muted); margin:6px 0; }
+    .day b { font-size:13px; }
+    .row-panels { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .row-panels .card { min-width:0; }
+    details { border:1px solid var(--line); border-radius:9px; margin:10px 0; padding:12px 15px; }
+    summary { cursor:pointer; font-weight:650; font-size:14px; }
+    details p { font-size:14px; margin-bottom:0; }
+    .trace { color:var(--muted); font-size:12px; border-top:1px dashed var(--line); padding-top:12px; margin-top:20px; }
+    .empty { text-align:center; padding:38px; background:white; border:1px solid var(--line); border-radius:16px; }
+    footer { color:var(--muted); font-size:12px; padding:7px 3px; }
+    code { background:#eeeeee; padding:2px 5px; border-radius:4px; font-size:.91em; overflow-wrap:anywhere; }
+    @media (min-width:1550px) { main { margin-right:auto; max-width:1320px; } }
+    @media (max-width:1150px) { main { padding:28px 25px 45px; } .sidebar { width:225px; padding:24px 15px 18px; } main { margin-left:225px; } .chapter { padding:25px; } .grid { grid-template-columns:1fr; } }
+    @media (max-width:800px) { .sidebar { position:relative; width:auto; padding:20px; } .sidebar nav { display:flex; gap:4px; overflow:auto; flex:none; padding-bottom:8px; margin-top:13px; } .sidebar nav a { flex:none; font-size:12px; } .sidebar .eyebrow,.sidebar-foot { display:none; } main { margin:0; padding:20px 14px 35px; } .hero-body { padding:24px; } .chapter { padding:22px 20px; } .search-row { flex-wrap:wrap; } .search-field { flex-basis:100%; } .stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .row-panels { grid-template-columns:1fr; } .calendar { grid-template-columns:repeat(2,minmax(0,1fr)); } h2 { font-size:21px; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+    @media print {
+      @page { margin:17mm 14mm; }
+      body { background:white; font-size:10pt; color:#111; }
+      .sidebar,.toolbar,.skip,.no-print,.empty { display:none !important; }
+      main { margin:0; padding:0; max-width:none; }
+      .hero,.chapter { border:0; border-radius:0; margin:0 0 16pt; padding:0; }
+      .hero-body { padding:14pt 0; }
+      .chapter[hidden] { display:block !important; }
+      h1 { font-size:27pt; } h2 { font-size:18pt; } h3 { font-size:13pt; }
+      h2,h3,.chapter-head { break-after:avoid; }
+      .chapter-head { margin-bottom:10pt; }
+      p,li { orphans:3; widows:3; }
+      .card,.stat,.notice,.flow,.day,details,tr,.chart { break-inside:avoid; }
+      .table-wrap { overflow:visible; }
+      table { font-size:8pt; } th,td { padding:6pt; }
+      thead { display:table-header-group; }
+      .mock { overflow:visible; }
+      .stats { grid-template-columns:repeat(4,minmax(0,1fr)); }
+      .calendar { grid-template-columns:repeat(5,minmax(0,1fr)); }
+      .row-panels { grid-template-columns:1fr 1fr; }
+      .grid { grid-template-columns:1fr 1fr 1fr; }
+      .chart svg { max-height:210pt; }
+      a { color:inherit; }
+      .hero-top,.status,.stat,.notice { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#conteudo">Pular para o conteúdo</a>
+  <aside class="sidebar" aria-label="Navegação do manual">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Conciliação<br>de horas</span></div>
+    <div class="eyebrow">Manual funcional · v1.0</div>
+    <nav aria-label="Capítulos">
+      <a href="#sobre"><small>01</small> Como usar este manual</a>
+      <a href="#primeiro-acesso"><small>02</small> Primeiro acesso</a>
+      <a href="#entender-numeros"><small>03</small> Entender os números</a>
+      <a href="#gestor"><small>04</small> Rotina do gestor</a>
+      <a href="#funcionario"><small>05</small> Rotina do funcionário</a>
+      <a href="#detalhe-dia"><small>06</small> Conferir um dia</a>
+      <a href="#justificativas"><small>07</small> Resolver divergências</a>
+      <a href="#filtros"><small>08</small> Usar filtros</a>
+      <a href="#notificacoes"><small>09</small> Notificações</a>
+      <a href="#relatorios"><small>10</small> Exportar relatórios</a>
+      <a href="#administracao"><small>11</small> Preparar a aplicação</a>
+      <a href="#sincronizacao"><small>12</small> Atualização dos dados</a>
+      <a href="#problemas"><small>13</small> Dúvidas e problemas</a>
+      <a href="#arquitetura"><small>14</small> Guia do arquiteto</a>
+      <a href="#glossario"><small>15</small> Glossário</a>
+    </nav>
+    <div class="sidebar-foot">Proposta de experiência<br>Monday + Ponto VR Mais<br><a href="especificacao-funcional.md">Especificação e prompts ↗</a></div>
+  </aside>
+
+  <main id="conteudo" tabindex="-1">
+    <header class="hero">
+      <div class="hero-top"></div>
+      <div class="hero-body">
+        <div class="eyebrow">Produto / Operação / Arquitetura</div>
+        <h1>Das horas registradas<br>à diferença explicada.</h1>
+        <p class="lead">Um guia para conferir os registros do Monday e do Ponto VR Mais, acompanhar pendências e transformar diferenças em ações claras.</p>
+        <div class="meta"><span class="pill proposal">Proposta funcional · não é a aplicação</span><span class="pill">Cerca de 50 funcionários</span><span class="pill">React no WebView2</span><span class="pill">13 set 2026 · v1.0</span></div>
+      </div>
+    </header>
+
+    <div class="toolbar no-print" aria-label="Ferramentas do manual">
+      <div class="search-row">
+        <div class="search-field"><label for="busca">Buscar nos capítulos deste manual</label><input id="busca" type="search" placeholder="Ex.: justificativa, ponto incompleto, exportação" aria-describedby="resultado-busca"></div>
+        <button class="button" id="limpar" type="button">Limpar filtros</button>
+        <button class="button primary" id="imprimir" type="button">Imprimir manual</button>
+      </div>
+      <div class="role-row" role="group" aria-label="Filtrar capítulos por perfil de leitura">
+        <span class="role-label">Ler como:</span>
+        <button class="role-button" type="button" data-role="todos" aria-pressed="true">Todos</button>
+        <button class="role-button" type="button" data-role="funcionario" aria-pressed="false">Funcionário</button>
+        <button class="role-button" type="button" data-role="gestor" aria-pressed="false">Gestor</button>
+        <button class="role-button" type="button" data-role="administrador" aria-pressed="false">Administrador</button>
+        <button class="role-button" type="button" data-role="arquiteto" aria-pressed="false">Arquiteto</button>
+      </div>
+      <p class="search-status" id="resultado-busca" role="status" aria-live="polite">15 capítulos disponíveis. Os filtros organizam o manual; não alteram permissões da aplicação.</p>
+      <noscript><p>O conteúdo está disponível integralmente. Busca, filtro por perfil e botão de impressão precisam de JavaScript; você também pode imprimir pelo navegador.</p></noscript>
+    </div>
+
+    <section class="chapter" id="sobre" data-roles="todos">
+      <div class="chapter-head"><span class="chapter-number">01</span><div><h2>Como usar este manual</h2><p class="subhead">Ponto de partida para usuários e para quem vai projetar a solução.</p></div></div>
+      <p>Este documento ensina a <strong>experiência proposta</strong> da aplicação. Os nomes de telas, botões e fluxos orientam a construção e a validação com a equipe. As ilustrações são estáticas e usam pessoas e valores fictícios; os únicos controles funcionais aqui são os do próprio manual.</p>
+      <div class="grid">
+        <div class="card"><h3>Sou funcionário</h3><p>Confira seu período, abra o dia com diferença e responda ao pedido do gestor.</p><a href="#funcionario">Ir para minha rotina →</a></div>
+        <div class="card"><h3>Sou gestor</h3><p>Analise a cobertura, priorize os casos e acompanhe as justificativas da equipe.</p><a href="#gestor">Ir para gestão da equipe →</a></div>
+        <div class="card"><h3>Sou arquiteto</h3><p>Use as jornadas como referência e a especificação para regras e critérios de aceite.</p><a href="#arquitetura">Ir para o guia de arquitetura →</a></div>
+      </div>
+      <div class="notice"><strong>Dois documentos complementares.</strong> Este HTML explica como usar. A <a href="especificacao-funcional.md">especificação funcional</a> reúne objetivo, permissões, regras, 13 requisitos, 20 cenários de aceite, decisões pendentes e o prompt mestre com oito prompts temáticos.</div>
+      <p>O manual abre diretamente no navegador, sem conexão ou instalação. A impressão inclui todos os capítulos, mesmo que a leitura esteja filtrada. Recursos marcados como <span class="status pending">2ª etapa</span> são evoluções planejadas.</p>
+    </section>
+
+    <section class="chapter" id="primeiro-acesso" data-roles="todos">
+      <div class="chapter-head"><span class="chapter-number">02</span><div><h2>Primeiro acesso e navegação</h2><p class="subhead">Confirme quem você é, quais dados está vendo e qual período está analisando.</p></div></div>
+      <ol>
+        <li><strong>Abra a área de conciliação no aplicativo desktop.</strong> Identifique-se quando solicitado. O acesso poderá aproveitar a sessão do desktop; a forma definitiva de entrada depende da solução aprovada.</li>
+        <li><strong>Confira o contexto do usuário.</strong> Se você também é gestor, escolha “Minha jornada” para seus dados ou “Gestão da equipe” para as pessoas sob sua responsabilidade.</li>
+        <li><strong>Selecione o período.</strong> Confira as datas inicial e final. O dia atual pode aparecer como “em andamento”.</li>
+        <li><strong>Confira a atualização das duas fontes.</strong> A leitura só é conclusiva quando o período está completo e encerrado.</li>
+        <li><strong>Use o menu lateral.</strong> Os itens disponíveis dependem das permissões concedidas à sua conta.</li>
+      </ol>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Perfil</th><th scope="col">Navegação esperada</th><th scope="col">Alcance</th></tr></thead><tbody>
+        <tr><td>Funcionário</td><td>Meu resumo · Meu calendário · Minhas pendências · Notificações</td><td>Somente seus registros</td></tr>
+        <tr><td>Gestor</td><td>Visão geral · Minha equipe · Divergências · Relatórios · Notificações</td><td>Equipes autorizadas</td></tr>
+        <tr><td>Administrador</td><td>Usuários e equipes · Correspondências · Regras e calendário · Sincronização · Auditoria</td><td>Configuração; acesso gerencial depende de permissão adicional</td></tr>
+      </tbody></table></div>
+      <p>Ao redimensionar a janela, o menu poderá se recolher. Os detalhes devem abrir com um caminho de retorno que mantenha o período e os filtros. Uma resposta ainda não enviada deve gerar um aviso antes de ser descartada.</p>
+      <p class="trace">Referência: RF-01 e seção 5 da especificação. Pendente: D-05 e D-12.</p>
+    </section>
+
+    <section class="chapter" id="entender-numeros" data-roles="todos">
+      <div class="chapter-head"><span class="chapter-number">03</span><div><h2>Entender os números e as situações</h2><p class="subhead">Leia sinal, qualidade do dado e tratamento em conjunto.</p></div></div>
+      <p>A comparação usa <strong>horas Monday menos horas de ponto</strong>. O ponto considera o total válido da jornada e os intervalos aplicáveis. O Monday considera apenas os lançamentos elegíveis atribuídos a você. A jornada prevista é uma referência adicional.</p>
+      <div class="table-wrap"><table><caption>Exemplo com tolerância ilustrativa de 10 minutos e faixa leve até 30 minutos.</caption><thead><tr><th scope="col">Ponto</th><th scope="col">Monday</th><th scope="col">Diferença</th><th scope="col">Como interpretar</th></tr></thead><tbody>
+        <tr><td class="num">08h00</td><td class="num">08h00</td><td class="num">00h00</td><td><span class="status reconciled">Conciliado</span> Totais iguais.</td></tr>
+        <tr><td class="num">08h00</td><td class="num">07h50</td><td class="num">−00h10</td><td><span class="status reconciled">Dentro da tolerância</span> Há 10 minutos a menos no Monday.</td></tr>
+        <tr><td class="num">08h00</td><td class="num">07h40</td><td class="num">−00h20</td><td><span class="status attention">Leve</span> Há 20 minutos a menos no Monday.</td></tr>
+        <tr><td class="num">08h00</td><td class="num">06h30</td><td class="num">−01h30</td><td><span class="status critical">Crítica</span> Há 1h30 a menos no Monday.</td></tr>
+        <tr><td class="num">08h00</td><td class="num">08h45</td><td class="num">+00h45</td><td><span class="status critical">Crítica</span> Há 45 minutos a mais no Monday.</td></tr>
+      </tbody></table></div>
+      <div class="notice warn">Os limites de 10 e 30 minutos são uma proposta a validar. Uma diferença positiva não significa automaticamente hora extra; uma diferença negativa não significa automaticamente falta ao trabalho.</div>
+      <h3>Saldo e divergência acumulada respondem a perguntas diferentes</h3>
+      <p>Se há −02h00 em um dia e +02h00 em outro, o <strong>saldo é zero</strong>, mas a <strong>divergência acumulada absoluta é 04h00</strong>. O ranking usa essa soma das magnitudes diárias para manter os dois dias visíveis.</p>
+      <p>A taxa de conciliação mede dias conciliados entre os dias elegíveis, completos e encerrados. A cobertura mostra quanto do período esperado já tem dados completos. Em 10 dias esperados, com 8 completos e 6 conciliados, a taxa é <strong>75%</strong> e a cobertura é <strong>80%</strong>.</p>
+      <h3>O mesmo dia pode ter mais de uma etiqueta</h3>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Dimensão</th><th scope="col">Exemplos</th><th scope="col">O que informa</th></tr></thead><tbody>
+        <tr><td>Qualidade e aplicabilidade</td><td>Completo, incompleto, desatualizado, em andamento, não aplicável</td><td>Se há base suficiente para comparar o dia.</td></tr>
+        <tr><td>Resultado numérico</td><td>Conciliado, leve, crítica</td><td>O tamanho da diferença em relação à tolerância.</td></tr>
+        <tr><td>Tratamento</td><td>Aguardando funcionário, aguardando gestor, resolvida por correção, encerrada com justificativa</td><td>Quem precisa agir e o que foi decidido.</td></tr>
+      </tbody></table></div>
+      <p>“Crítica · Encerrada com justificativa” é um resultado válido: a explicação foi aceita e a diferença original continua registrada. Já “Sem lançamento no Monday” identifica um motivo; “Dados incompletos” indica que falta informação para concluir.</p>
+      <p>Se o ponto é zero confirmado, o percentual da diferença não pode ser calculado. Se uma fonte falhou, seu valor é desconhecido. Em ambos os casos, a tela deve explicar a situação em vez de exibir um percentual enganoso.</p>
+      <p class="trace">Referência: RN-01 a RN-10. Cenários: CA-01 a CA-10, CA-16 e CA-17.</p>
+    </section>
+
+    <section class="chapter" id="gestor" data-roles="gestor arquiteto">
+      <div class="chapter-head"><span class="chapter-number">04</span><div><h2>Rotina do gestor</h2><p class="subhead">Da visão da equipe ao dia que precisa de análise.</p></div></div>
+      <ol>
+        <li><strong>Abra Visão geral e ajuste período e equipe.</strong> Confira a atualização das fontes e a cobertura antes de interpretar os indicadores.</li>
+        <li><strong>Leia os cards.</strong> Observe taxa de dias conciliados, diferença absoluta, casos críticos e pendências aguardando sua análise.</li>
+        <li><strong>Consulte o ranking.</strong> A ordenação padrão destaca a maior soma das diferenças absolutas por dia. Alterne para dias divergentes ou vencimento quando necessário.</li>
+        <li><strong>Abra a pessoa.</strong> A aplicação deve manter o período e mostrar a tabela diária e as curvas de ponto e Monday.</li>
+        <li><strong>Abra o dia que explica a diferença.</strong> Analise registros, regras, exceções e comentários antes de solicitar uma ação.</li>
+        <li><strong>Solicite ajuste ou justificativa.</strong> Informe o que precisa ser esclarecido. Depois acompanhe a fila “Aguardando gestor”.</li>
+      </ol>
+      <div class="mock">
+        <div class="mock-label">ILUSTRAÇÃO ESTÁTICA · Pessoas e dados fictícios · Nenhuma ação é enviada</div>
+        <div class="mock-body">
+          <div class="mock-title"><strong>Minha equipe · Onde analisar primeiro</strong><span class="mock-filter">31 ago a 04 set 2026 · 3 pessoas</span></div>
+          <p class="mock-meta">Exemplo com 15 jornadas elegíveis e completas. Cobertura: 100%. Ponto: 04/09 às 18h10 · Monday: 04/09 às 18h12.</p>
+          <div class="stats"><div class="stat"><span>Taxa de dias conciliados</span><b>66,7%</b></div><div class="stat"><span>Divergência absoluta</span><b>06h35</b></div><div class="stat"><span>Saldo do período</span><b>−01h05</b></div><div class="stat"><span>Dias críticos</span><b>4</b></div></div>
+          <div class="table-wrap"><table><caption>Ranking ordenado pela soma das diferenças absolutas diárias; tolerância ilustrativa de 10/30 minutos.</caption><thead><tr><th scope="col">Pessoa</th><th scope="col">Ponto</th><th scope="col">Monday</th><th scope="col">Saldo</th><th scope="col">Dif. absoluta</th><th scope="col">Dias divergentes</th></tr></thead><tbody>
+            <tr><td><strong>Bruno Lima</strong></td><td class="num">40h00</td><td class="num">40h00</td><td class="num">00h00</td><td class="num"><strong>04h00</strong></td><td>2 · Críticos</td></tr>
+            <tr><td><strong>Ana Souza</strong></td><td class="num">40h00</td><td class="num">39h15</td><td class="num">−00h45</td><td class="num"><strong>02h15</strong></td><td>2 · Críticos</td></tr>
+            <tr><td><strong>Clara Alves</strong></td><td class="num">40h00</td><td class="num">39h40</td><td class="num">−00h20</td><td class="num"><strong>00h20</strong></td><td>1 · Leve</td></tr>
+          </tbody></table></div>
+          <p class="caption">Bruno aparece primeiro apesar do saldo zero: um dia com −02h00 e outro com +02h00. Ana tem −01h30 e +00h45; Clara, −00h20. Os outros 10 dias estão conciliados.</p>
+        </div>
+      </div>
+      <h3>Como ler as curvas mais afastadas</h3>
+      <p>Na visão da pessoa, a distância vertical entre as linhas mostra a diferença daquele dia. Um ponto sem informação deve aparecer como lacuna. O gráfico diário ajuda a descobrir quando o saldo mensal está escondendo compensações entre datas.</p>
+      <figure class="chart">
+        <div class="chart-legend"><span><i class="legend-line" aria-hidden="true"></i>Ponto</span><span><i class="legend-line monday" aria-hidden="true"></i>Monday · linha tracejada</span><span>Ana Souza · valores fictícios</span></div>
+        <svg viewBox="0 0 620 270" role="img" aria-labelledby="chart-title chart-desc">
+          <title id="chart-title">Comparativo diário de horas de Ana Souza</title>
+          <desc id="chart-desc">De 31 de agosto a 4 de setembro de 2026, o ponto registra 8 horas por dia. Monday registra 8 horas, 6 horas e 30 minutos, 8 horas, 8 horas e 45 minutos e 8 horas. A maior diferença é de 1 hora e 30 minutos a menos no dia 1 de setembro.</desc>
+          <g stroke="#e5e5e5" stroke-width="1"><path d="M60 20H560 M60 60H560 M60 100H560 M60 140H560 M60 180H560 M60 220H560"/></g>
+          <g fill="#626262" font-family="Segoe UI,Arial,sans-serif" font-size="11"><text x="15" y="24">10h</text><text x="21" y="64">8h</text><text x="21" y="104">6h</text><text x="21" y="144">4h</text><text x="21" y="184">2h</text><text x="21" y="224">0h</text><text x="44" y="245">31/08</text><text x="164" y="245">01/09</text><text x="284" y="245">02/09</text><text x="404" y="245">03/09</text><text x="524" y="245">04/09</text></g>
+          <path d="M60 60L180 90L300 60L420 45L540 60L60 60Z" fill="#f3c6a3" opacity=".45"/>
+          <path d="M60 60H540" fill="none" stroke="#626262" stroke-width="3"/>
+          <path d="M60 60L180 90L300 60L420 45L540 60" fill="none" stroke="#c4510a" stroke-width="3" stroke-dasharray="7 4"/>
+          <g fill="#626262"><circle cx="60" cy="60" r="4"/><circle cx="180" cy="60" r="4"/><circle cx="300" cy="60" r="4"/><circle cx="420" cy="60" r="4"/><circle cx="540" cy="60" r="4"/></g>
+          <g fill="#c4510a" stroke="white" stroke-width="2"><circle cx="180" cy="90" r="5"/><circle cx="420" cy="45" r="5"/></g>
+          <g font-family="Segoe UI,Arial,sans-serif" font-size="12" fill="#99400c"><text x="153" y="118">−01h30</text><text x="394" y="30">+00h45</text></g>
+        </svg>
+        <figcaption>Valores Monday: 08h00 · 06h30 · 08h00 · 08h45 · 08h00. Ponto: 08h00 em cada dia. Saldo: −00h45. Divergência absoluta: 02h15.</figcaption>
+      </figure>
+      <p>Para uma equipe de 50 pessoas, comece pelo ranking e abra o gráfico individual. Comparação entre equipes, tendências avançadas e análises de recorrência estão previstas para a segunda etapa.</p>
+      <div class="notice">O ranking indica registros que merecem conferência. Use o contexto do dia e a cobertura da informação para interpretar os números.</div>
+      <p class="trace">Referência: RF-03, RF-04 e RF-05. Cenários: CA-06, CA-16 e CA-19.</p>
+    </section>
+
+    <section class="chapter" id="funcionario" data-roles="funcionario gestor arquiteto">
+      <div class="chapter-head"><span class="chapter-number">05</span><div><h2>Rotina do funcionário</h2><p class="subhead">Conferir, explicar e acompanhar a decisão.</p></div></div>
+      <ol>
+        <li><strong>Entre em Meu resumo.</strong> Escolha o período e confira se as fontes estão atualizadas.</li>
+        <li><strong>Abra Meu calendário ou Minhas pendências.</strong> Os dias destacados indicam diferença, falta de dados ou solicitação recebida.</li>
+        <li><strong>Selecione um dia.</strong> Confira os lançamentos e a explicação da diferença.</li>
+        <li><strong>Corrija na origem ou envie uma justificativa.</strong> Se o lançamento Monday estiver faltando, siga o processo da empresa para ajustá-lo. Se houver problema no ponto, siga o processo de correção de ponto.</li>
+        <li><strong>Acompanhe o tratamento.</strong> Depois de responder, o caso fica aguardando gestor. Uma devolução informa o complemento necessário.</li>
+      </ol>
+      <div class="mock">
+        <div class="mock-label">ILUSTRAÇÃO ESTÁTICA · Recorte de calendário pessoal · Dados fictícios de Ana</div>
+        <div class="mock-body">
+          <div class="mock-title"><strong>Meu calendário</strong><span class="mock-filter">31 ago a 04 set 2026</span></div>
+          <div class="calendar"><div class="day"><strong>Seg · 31/08</strong><span>Conciliado</span><b>00h00</b></div><div class="day alert"><strong>Ter · 01/09</strong><span>Crítica</span><b>−01h30</b></div><div class="day"><strong>Qua · 02/09</strong><span>Conciliado</span><b>00h00</b></div><div class="day alert"><strong>Qui · 03/09</strong><span>Crítica</span><b>+00h45</b></div><div class="day"><strong>Sex · 04/09</strong><span>Conciliado</span><b>00h00</b></div></div>
+          <p class="caption">Na aplicação proposta, selecionar um dia abre seus registros. Esta ilustração não possui dias clicáveis.</p>
+        </div>
+      </div>
+      <p>A legenda completa inclui conciliado, leve, crítica, não aplicável, dados incompletos e aguardando análise. As situações devem ser identificáveis por texto e símbolo, além da cor.</p>
+      <h3>O que escrever em uma justificativa</h3>
+      <p>Explique o ocorrido, informe qual atividade ou registro foi afetado e descreva a ação já realizada ou necessária. Use o campo ligado ao dia correto para manter o contexto.</p>
+      <div class="quote">“Em 01/09 participei de um treinamento interno das 15h30 às 17h. As 1h30 não foram lançadas no Monday. Solicito orientação sobre a atividade em que devo registrar esse período.”</div>
+      <p>Após o envio, confira a confirmação e o novo estado. Se houver erro de envio, mantenha o texto disponível para tentar novamente. Uma justificativa aceita permanece no histórico junto da diferença que a originou.</p>
+      <p class="trace">Referência: RF-05, RF-06 e RF-07. Cenários: CA-11 e CA-12.</p>
+    </section>
+
+    <section class="chapter" id="detalhe-dia" data-roles="todos">
+      <div class="chapter-head"><span class="chapter-number">06</span><div><h2>Conferir um dia em detalhe</h2><p class="subhead">Todo total precisa ter uma explicação consultável.</p></div></div>
+      <p>Abra um dia pelo calendário, pela tabela da pessoa ou por uma notificação. Verifique a data, o responsável, as fontes e a regra aplicada antes de responder.</p>
+      <div class="mock"><div class="mock-label">ILUSTRAÇÃO ESTÁTICA · Ana Souza · 01/09/2026 · Fontes completas</div><div class="mock-body">
+        <div class="mock-title"><strong>01h30 a menos no Monday</strong><span class="status critical">Divergência crítica</span></div>
+        <div class="row-panels">
+          <div class="card"><h3>Ponto VR Mais</h3><p>Entrada: 08h00<br>Saída para intervalo: 12h00<br>Retorno: 13h00<br>Saída: 17h00</p><strong>Total líquido: 08h00</strong></div>
+          <div class="card"><h3>Monday</h3><p>Projeto A — revisão: 03h00<br>Reunião de equipe: 01h30<br>Documentação: 02h00</p><strong>Total elegível: 06h30</strong></div>
+        </div>
+        <p class="caption">Diferença: 06h30 − 08h00 = −01h30. Tolerância ilustrativa: 10 minutos. Nenhum lançamento excluído neste exemplo.</p>
+      </div></div>
+      <ol>
+        <li><strong>Confira o ponto.</strong> Leia batidas, intervalo e ajustes disponíveis. Um total já líquido não deve descontar o intervalo novamente.</li>
+        <li><strong>Confira as atividades.</strong> Veja responsável pelo tempo, duração, projeto/board/grupo quando fornecidos e itens excluídos do cálculo.</li>
+        <li><strong>Leia o motivo.</strong> Confirme se é uma diferença calculada, ausência de registro confirmada ou dado incompleto.</li>
+        <li><strong>Consulte regra e histórico.</strong> Verifique justificativas anteriores, decisões e alterações após a última atualização.</li>
+        <li><strong>Escolha o próximo passo disponível ao seu perfil.</strong> Responder, solicitar esclarecimento, analisar ou abrir o registro de origem quando houver um vínculo disponível.</li>
+      </ol>
+      <div class="notice warn">Nem toda integração fornecerá batidas, intervalos, boards ou links. Campos sem informação devem aparecer como indisponíveis. Se os dados estão incompletos, resolva a origem da lacuna antes de concluir que há uma diferença real.</div>
+      <p class="trace">Referência: RF-05, RN-02, RN-03 e RN-06. Pendente: D-02, D-03 e D-04.</p>
+    </section>
+
+    <section class="chapter" id="justificativas" data-roles="funcionario gestor arquiteto">
+      <div class="chapter-head"><span class="chapter-number">07</span><div><h2>Resolver divergências</h2><p class="subhead">Cada etapa informa quem precisa agir.</p></div></div>
+      <div class="flow" aria-label="Fluxo principal de tratamento"><span>Identificada</span><b aria-hidden="true">→</b><span>Aguardando funcionário</span><b aria-hidden="true">→</b><span>Aguardando gestor</span><b aria-hidden="true">→</b><span>Decisão registrada</span></div>
+      <h3>Se você é gestor</h3>
+      <ol>
+        <li>Na Central de divergências, abra o caso e escolha solicitar justificativa ou correção.</li>
+        <li>Confira destinatário, data e diferença. Escreva o pedido com clareza e informe prazo quando o recurso estiver habilitado.</li>
+        <li>Depois da resposta, abra “Aguardando gestor”, leia o histórico e confira se os dados mudaram.</li>
+        <li>Aceite a justificativa ou devolva para complemento, informando motivo e próximo passo.</li>
+        <li>Se precisar reabrir um caso encerrado, registre por que é necessária uma nova análise. Seu próprio caso deve ser decidido por outro responsável autorizado.</li>
+      </ol>
+      <h3>Se você é funcionário</h3>
+      <ol>
+        <li>Abra o pedido por Minhas pendências ou pela notificação.</li>
+        <li>Leia o que foi solicitado e confira os registros do dia.</li>
+        <li>Envie a resposta ou informe a correção realizada na origem. Você também pode enviar justificativa antes de receber uma cobrança.</li>
+        <li>Acompanhe a análise e responda caso o gestor peça mais informações.</li>
+      </ol>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Situação</th><th scope="col">O que significa</th><th scope="col">Próximo passo</th></tr></thead><tbody>
+        <tr><td>Aguardando funcionário</td><td>Existe um pedido ou complemento a responder.</td><td>Funcionário confere e envia resposta.</td></tr>
+        <tr><td>Aguardando gestor</td><td>A resposta já foi enviada.</td><td>Gestor aceita ou pede complemento.</td></tr>
+        <tr><td>Encerrada com justificativa</td><td>A explicação foi aceita; a diferença permanece.</td><td>Consultar a decisão quando necessário.</td></tr>
+        <tr><td>Resolvida por correção</td><td>Os dados atualizados ficaram dentro da tolerância.</td><td>Consultar o antes/depois no histórico.</td></tr>
+        <tr><td>Reaberta</td><td>O caso precisa de nova análise.</td><td>Ver motivo e responsável atual.</td></tr>
+      </tbody></table></div>
+      <p>“Vencida” indica atraso no prazo, mantendo quem precisa agir. Marcar uma notificação como lida não muda o tratamento. Aceitar uma justificativa não altera os registros do Monday ou do ponto.</p>
+      <p><span class="status pending">2ª etapa</span> Anexos, prazos configuráveis e lembretes automáticos complementam esse fluxo. A regra para alteração de dados após encerramento precisa ser validada antes da implementação.</p>
+      <p class="trace">Referência: RF-07, RF-09, RF-13 e seção 7 da especificação. Pendente: D-07 e D-09.</p>
+    </section>
+
+    <section class="chapter" id="filtros" data-roles="todos">
+      <div class="chapter-head"><span class="chapter-number">08</span><div><h2>Usar filtros e períodos personalizados</h2><p class="subhead">O mesmo recorte deve valer para cards, gráficos, tabelas e exportação.</p></div></div>
+      <ol>
+        <li>Escolha um período rápido ou informe data inicial e final. As duas datas entram na consulta.</li>
+        <li>Adicione pessoa, equipe ou gestor, conforme suas permissões.</li>
+        <li>Refine por qualidade dos dados, motivo, gravidade, tratamento, faixa/direção da diferença, justificativa, responsável ou prazo.</li>
+        <li>Confira os chips de filtros ativos e a quantidade de resultados.</li>
+        <li>Remova um chip para retirar apenas aquele critério ou use “Limpar filtros” para voltar ao padrão informado.</li>
+      </ol>
+      <div class="quote"><strong>Exemplo gerencial:</strong> período de 01/09 a 30/09 + equipe Projetos + divergência crítica + aguardando funcionário. O resultado deve conter somente os casos que atendem a todos esses critérios.</div>
+      <p>Critérios diferentes são combinados com <strong>E</strong>. Várias opções no mesmo filtro são combinadas com <strong>OU</strong>: escolher leve e crítica inclui qualquer uma dessas duas classificações.</p>
+      <p>Ao abrir um detalhe e voltar, a consulta deve manter o contexto. Ao mudar filtros com pessoas selecionadas, a seleção deve ser limpa e o usuário avisado. Isso evita exportar ou notificar destinatários que ficaram fora da consulta.</p>
+      <div class="notice">Se não aparecer nenhum resultado, confira primeiro o período e os filtros ativos. “Nenhum resultado” não significa falha na atualização nem ausência definitiva de registros.</div>
+      <p><span class="status pending">2ª etapa</span> Salvar filtros como favoritos e reutilizar visualizações. Abrir uma visualização compartilhada não concede acesso a dados de outras equipes.</p>
+      <p class="trace">Referência: RF-08. Cenários: CA-19 e CA-20.</p>
+    </section>
+
+    <section class="chapter" id="notificacoes" data-roles="todos">
+      <div class="chapter-head"><span class="chapter-number">09</span><div><h2>Receber e enviar notificações internas</h2><p class="subhead">A mensagem deve levar diretamente ao assunto que precisa de atenção.</p></div></div>
+      <h3>Consultar uma notificação</h3>
+      <ol>
+        <li>Abra a central pelo sino do cabeçalho ou pelo menu Notificações.</li>
+        <li>Use o filtro de não lidas ou de tipo para localizar pedidos, respostas e decisões.</li>
+        <li>Abra a mensagem e acesse o caso relacionado.</li>
+        <li>Responda no próprio caso quando houver solicitação. Marcar como lida apenas organiza sua caixa.</li>
+      </ol>
+      <h3>Enviar uma mensagem como gestor</h3>
+      <ol>
+        <li>Abra o funcionário ou a divergência e escolha enviar notificação ou solicitar uma ação.</li>
+        <li>Revise o destinatário, a data do caso e o conteúdo.</li>
+        <li>Envie e confira a confirmação. Em caso de falha, a tela deve informar que o envio não foi concluído.</li>
+      </ol>
+      <div class="quote">“Olá, Ana. Em 01/09 há 01h30 a menos no Monday em relação ao ponto. Confira as atividades do dia e envie uma justificativa ou ajuste o lançamento. Você pode abrir os detalhes por esta notificação.”</div>
+      <p>O histórico registra leitura quando disponível, mas leitura não equivale a resposta ou concordância. Se a permissão para abrir um caso mudar, a notificação não deve revelar dados fora do novo acesso.</p>
+      <p><span class="status pending">2ª etapa</span> Envio em lote, mensagens para equipe, lembretes de prazo e preferências. Antes do envio em lote, revisar a lista completa de destinatários; quando houver falha parcial, tentar novamente apenas para quem não recebeu.</p>
+      <p class="trace">Referência: RF-09. Os envios descritos são internos à aplicação; este manual não envia mensagens.</p>
+    </section>
+
+    <section class="chapter" id="relatorios" data-roles="funcionario gestor arquiteto">
+      <div class="chapter-head"><span class="chapter-number">10</span><div><h2>Exportar relatórios</h2><p class="subhead">Leve os números com seu período, filtros e contexto de atualização.</p></div></div>
+      <ol>
+        <li>Abra Relatórios na visão gerencial ou a opção de exportar seus dados na visão pessoal.</li>
+        <li>Escolha o tipo de relatório e confirme o período e os filtros.</li>
+        <li>Defina se a exportação inclui os resultados filtrados ou apenas a seleção explícita, quando disponível.</li>
+        <li>Escolha colunas, ordenação e agrupamento e abra a prévia.</li>
+        <li>Confira pessoas, quantidade de linhas, totais, cobertura e atualização das fontes.</li>
+        <li>Exporte a planilha e confira a confirmação. A aplicação desktop deverá informar onde o arquivo foi salvo ou como abri-lo.</li>
+      </ol>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Relatório</th><th scope="col">Quando usar</th><th scope="col">Etapa</th></tr></thead><tbody>
+        <tr><td>Resumo do período</td><td>Apresentar totais, conciliação, cobertura e pendências.</td><td>MVP</td></tr>
+        <tr><td>Conciliação por pessoa/equipe</td><td>Conferir totais e diferenças por agrupamento autorizado.</td><td>MVP</td></tr>
+        <tr><td>Divergências detalhadas</td><td>Analisar pessoa, dia, motivo, diferença e tratamento.</td><td>MVP</td></tr>
+        <tr><td>Registros ausentes e pendências</td><td>Localizar falta de lançamento confirmada e pedidos sem resposta.</td><td>MVP</td></tr>
+        <tr><td>PDF executivo e evolução mensal</td><td>Compartilhar uma leitura gerencial formatada.</td><td>2ª etapa</td></tr>
+        <tr><td>Justificativas, decisões e horas extras da origem</td><td>Análise específica com dados e permissões disponíveis.</td><td>2ª etapa</td></tr>
+      </tbody></table></div>
+      <p>O arquivo deve informar geração, autoria, período, filtros, regras e atualizações de cada fonte. Durações usam horas e minutos; totais como 160h00 precisam permanecer legíveis. Percentuais sem base devem aparecer como “não calculável”.</p>
+      <p>Exemplo de nome: <code>conciliacao-equipe-2026-09-01-a-2026-09-30.xlsx</code>. O formato definitivo da planilha e a experiência de download no WebView2 ainda precisam ser definidos.</p>
+      <div class="notice warn">Se os dados mudarem entre a prévia e a geração, a aplicação deve informar a mudança e atualizar o contexto. Se não houver resultados, revise os filtros. O funcionário exporta apenas seus registros; o gestor, somente seu escopo autorizado.</div>
+      <p class="trace">Referência: RF-10. Cenário: CA-18. Pendente: D-10 e D-12. O botão “Imprimir manual” desta página imprime a documentação, não um relatório da aplicação.</p>
+    </section>
+
+    <section class="chapter" id="administracao" data-roles="administrador arquiteto">
+      <div class="chapter-head"><span class="chapter-number">11</span><div><h2>Preparar a aplicação como administrador</h2><p class="subhead">Pessoas bem associadas e regras claras sustentam relatórios confiáveis.</p></div></div>
+      <ol>
+        <li><strong>Cadastre os acessos.</strong> Defina funcionários, gestores, equipes e permissões. Conceda consulta gerencial somente a quem precisa desse papel.</li>
+        <li><strong>Associe as identidades.</strong> Na área Correspondências, ligue a pessoa interna ao usuário Monday e ao funcionário do ponto. Revise nomes iguais e vínculos ambíguos.</li>
+        <li><strong>Configure as regras básicas.</strong> Confirme tolerância, jornada de referência, atividades elegíveis, calendário e exceções como férias, afastamentos e folgas.</li>
+        <li><strong>Confira as fontes disponíveis.</strong> Identifique quais campos e períodos podem ser consultados ou importados; não considere uma integração pronta apenas por existir uma tela de configuração.</li>
+        <li><strong>Acompanhe a carga inicial.</strong> Resolva registros rejeitados, duplicados e sem correspondência.</li>
+        <li><strong>Valide uma amostra.</strong> Confira com as fontes originais jornadas completas, intervalos, diferença positiva, negativa, folga e ausência de dados.</li>
+        <li><strong>Mantenha vigências e histórico.</strong> Registre mudança de equipe, gestor, regra e desativação de acesso sem apagar decisões anteriores.</li>
+      </ol>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Situação encontrada</th><th scope="col">Ação esperada</th></tr></thead><tbody>
+        <tr><td>Pessoa no ponto sem usuário Monday associado</td><td>Localizar e confirmar a identidade correta; manter os registros na fila até a resolução.</td></tr>
+        <tr><td>Dois cadastros com o mesmo nome</td><td>Conferir identificadores adicionais; não unir automaticamente apenas pelo nome.</td></tr>
+        <tr><td>Registro duplicado</td><td>Consultar a identificação de origem e verificar se a reimportação foi ignorada corretamente.</td></tr>
+        <tr><td>Regra alterada</td><td>Definir vigência e alcance; informar se períodos anteriores serão reavaliados.</td></tr>
+        <tr><td>Funcionário desligado ou transferido</td><td>Atualizar acesso e responsabilidade com data de vigência, preservando o histórico autorizado.</td></tr>
+      </tbody></table></div>
+      <p><span class="status pending">2ª etapa</span> Escalas avançadas, regras específicas por contexto e delegações temporárias. O calendário básico e o tratamento de exceções já são necessários no MVP.</p>
+      <p class="trace">Referência: RF-01, RF-02, RF-11 e RF-13. Pendente: D-01 a D-05 e D-08.</p>
+    </section>
+
+    <section class="chapter" id="sincronizacao" data-roles="todos">
+      <div class="chapter-head"><span class="chapter-number">12</span><div><h2>Atualização e qualidade dos dados</h2><p class="subhead">Uma tentativa recente não significa que a informação foi atualizada.</p></div></div>
+      <p>O cabeçalho deve informar a última atualização bem-sucedida de <strong>cada fonte</strong>. Na área administrativa de Sincronização, acompanhe tentativa, sucesso, cobertura, andamento, quantidade processada e falhas.</p>
+      <ol>
+        <li>Confira se o período escolhido está coberto pelo Monday e pelo ponto.</li>
+        <li>Se houver aviso, abra os detalhes permitidos ao seu perfil.</li>
+        <li>Use “Atualizar dados” quando disponível e aguarde o resultado.</li>
+        <li>Reabra o dia afetado e verifique se seus registros e tratamento mudaram.</li>
+        <li>Se o problema continuar, procure o administrador com fonte, período e mensagem exibida.</li>
+      </ol>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Aviso</th><th scope="col">Como agir</th></tr></thead><tbody>
+        <tr><td>Dados desatualizados</td><td>Confira a data do último sucesso. Atualize quando permitido; interprete o último resultado com essa ressalva.</td></tr>
+        <tr><td>Atualização parcial</td><td>Veja qual fonte ou período ficou incompleto. Não trate a parte ausente como zero.</td></tr>
+        <tr><td>Batida incompleta</td><td>Siga o processo de correção do ponto e consulte novamente após atualização.</td></tr>
+        <tr><td>Sem correspondência</td><td>Solicite ao administrador a revisão do vínculo entre os cadastros.</td></tr>
+        <tr><td>Dia em andamento</td><td>Acompanhe como provisório e confira novamente após o encerramento e o prazo de lançamento definidos.</td></tr>
+      </tbody></table></div>
+      <p>Quando uma correção na origem elimina a diferença, o caso pode ficar “Resolvida por correção”, com histórico do antes/depois. Atualizar registros idênticos não deve duplicar horas, pendências ou notificações.</p>
+      <p class="trace">Referência: RF-12, RN-06, RN-11 e RN-12. Cenários: CA-07, CA-12 a CA-15. Pendente: D-04 e D-06.</p>
+    </section>
+
+    <section class="chapter" id="problemas" data-roles="todos">
+      <div class="chapter-head"><span class="chapter-number">13</span><div><h2>Dúvidas e problemas comuns</h2><p class="subhead">Situações que precisam de uma interpretação cuidadosa.</p></div></div>
+      <details><summary>O saldo do mês está zerado. Por que ainda existem divergências?</summary><p>Diferenças de sinais opostos podem se compensar no saldo. Abra os dias e confira a divergência acumulada absoluta. −02h00 e +02h00 resultam em saldo zero e 04h00 de diferenças para analisar.</p></details>
+      <details><summary>Minha justificativa foi aceita e o dia continua crítico.</summary><p>O resultado numérico e o tratamento são separados. A aprovação encerra a análise e preserva a diferença original. Verifique a etiqueta “Encerrada com justificativa” e a decisão no histórico.</p></details>
+      <details><summary>Corrigi o Monday, mas o valor ainda está antigo.</summary><p>Confira a última atualização bem-sucedida do Monday e o período coberto. Atualize quando disponível e consulte o detalhe. Se o registro continuar ausente, o administrador deve revisar elegibilidade, data efetiva e correspondência da pessoa.</p></details>
+      <details><summary>O ponto está indisponível. Isso vira diferença contra mim?</summary><p>Não há base para uma conclusão numérica quando a fonte está desconhecida ou incompleta. A aplicação deve informar a lacuna. Ausência de registro confirmada por uma consulta completa é uma situação diferente.</p></details>
+      <details><summary>Trabalhei em reunião ou treinamento sem atividade no Monday.</summary><p>Confira a política adotada pela empresa para atividades internas. Pode ser necessário lançar em uma atividade elegível ou justificar o período. A aplicação deve mostrar a regra utilizada, sem presumir a causa da diferença.</p></details>
+      <details><summary>Uma folga, férias ou jornada noturna apareceu incorretamente.</summary><p>Peça revisão do calendário, da vigência da exceção ou da regra de data da jornada. Não conclua a análise enquanto a aplicação estiver comparando dias que não correspondem.</p></details>
+      <details><summary>Marquei a notificação como lida. Preciso fazer mais alguma coisa?</summary><p>Se existe um pedido, abra o caso e envie a resposta. A leitura organiza as notificações, mas não atende à solicitação nem encerra a pendência.</p></details>
+      <details><summary>Não vejo uma pessoa, uma tela ou um relatório.</summary><p>Confira perfil ativo e filtros. O funcionário vê apenas seus dados; o gestor depende do escopo autorizado. Se o acesso esperado continuar ausente, procure o administrador.</p></details>
+      <details><summary>O relatório não apareceu após exportar.</summary><p>Confira se houve confirmação ou erro. A experiência de download depende da aplicação desktop e deve indicar destino ou abertura do arquivo. Se falhou, tente novamente; não presuma que a geração terminou sem confirmação.</p></details>
+      <details><summary>A equipe está 100% conciliada, mas a cobertura está baixa.</summary><p>A taxa considera somente os dias completos e encerrados. Com pouca cobertura, ainda faltam dados para avaliar o período inteiro. Analise as duas métricas juntas e confira as lacunas.</p></details>
+      <p class="trace">Referência: RN-04, RN-06 a RN-12; RF-01, RF-08, RF-09 e RF-10.</p>
+    </section>
+
+    <section class="chapter" id="arquitetura" data-roles="arquiteto">
+      <div class="chapter-head"><span class="chapter-number">14</span><div><h2>Guia de leitura para o arquiteto</h2><p class="subhead">Transforme a experiência em uma solução com decisões rastreáveis.</p></div></div>
+      <p>O escopo de produto está consolidado na <a href="especificacao-funcional.md">especificação funcional em Markdown</a>. React e WebView2 são restrições informadas. A escolha dos demais componentes e a validação dos mecanismos reais de integração fazem parte da arquitetura.</p>
+      <div class="notice"><strong>Premissas que ainda precisam de evidência:</strong> forma de acesso às fontes, campos disponíveis, origem do tempo no Monday, atribuição por pessoa, total líquido do ponto, frequência de atualização e experiência de autenticação/download no desktop.</div>
+      <h3>Sequência sugerida de leitura e validação</h3>
+      <ol>
+        <li>Leia objetivo, limites e matriz de permissões na especificação.</li>
+        <li>Valide regras RN-01 a RN-12, principalmente data da jornada, fonte incompleta, sinal e cálculo do ranking.</li>
+        <li>Use as rotinas deste manual para revisar o fluxo com um funcionário, um gestor e um administrador.</li>
+        <li>Mapeie RF-01 a RF-13 para a solução e confirme as capacidades reais das fontes.</li>
+        <li>Resolva ou registre as decisões D-01 a D-13 antes de assumir comportamentos que dependem delas.</li>
+        <li>Use CA-01 a CA-20 como base de validação de ponta a ponta e os prompts da seção 12 para orientar os chats de construção.</li>
+      </ol>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Capacidade</th><th scope="col">Requisitos</th><th scope="col">O que precisa ser preservado</th></tr></thead><tbody>
+        <tr><td>Identidade e escopo</td><td>RF-01, RF-02, RF-11</td><td>Correspondência inequívoca, acesso por perfil e vigência de equipes.</td></tr>
+        <tr><td>Conciliação e detalhe</td><td>RF-05, RF-12; RN-01 a RN-12</td><td>Origem dos totais, qualidade, ausência versus zero e regras com vigência.</td></tr>
+        <tr><td>Painéis e navegação</td><td>RF-03, RF-04, RF-06, RF-08</td><td>Mesmo recorte, ranking absoluto, cobertura, teclado e janela redimensionável.</td></tr>
+        <tr><td>Tratamento e comunicação</td><td>RF-07, RF-09, RF-13</td><td>Responsável atual, transições, mensagens sem duplicidade e histórico.</td></tr>
+        <tr><td>Relatórios</td><td>RF-10</td><td>Permissões, unidade de duração, contexto dos dados e consistência com a prévia.</td></tr>
+      </tbody></table></div>
+      <h3>Escopo por entrega</h3>
+      <p><strong>MVP:</strong> acesso, equipes, correspondência, calendário básico, fontes/qualidade, conciliação, painéis, filtros, detalhe diário, justificativas, notificações individuais, planilha e auditoria.</p>
+      <p><strong>Segunda etapa:</strong> PDF, favoritos, envio em lote, lembretes e prazos configuráveis, anexos, escalas avançadas, comparação entre equipes/períodos e tendências.</p>
+      <p><strong>Evoluções:</strong> resumo semanal, alertas preventivos, sugestões explicáveis de correção, tempo de resolução, metas de qualidade do registro, painel executivo e eventual fechamento/reabertura de período.</p>
+      <h3>Decisões de produto que impactam a arquitetura</h3>
+      <p>As decisões pendentes cobrem tolerância e precisão; fuso e jornada noturna; atribuição das horas Monday; campos e acesso às fontes; sessão e escopo histórico; atualização e prazo de lançamento; mudança após encerramento; calendário e atividades internas; lembretes e delegação; exportações; retenção e anexos; integração com o desktop; e metas de desempenho com cerca de 50 pessoas e histórico real.</p>
+      <p>O MVP se completa quando o funcionário consegue conferir e responder, o gestor consegue analisar e exportar, e o administrador consegue explicar a identidade, a origem e a regra dos números. A apuração formal de folha e banco de horas e a escrita nas fontes exigem definições próprias.</p>
+      <p><a class="button no-print" href="especificacao-funcional.md" download>Baixar especificação e prompts</a></p>
+      <p class="trace">Esta documentação descreve um produto proposto. Não declara que os recursos existem no repositório atual nem que as integrações foram verificadas.</p>
+    </section>
+
+    <section class="chapter" id="glossario" data-roles="todos">
+      <div class="chapter-head"><span class="chapter-number">15</span><div><h2>Glossário rápido</h2><p class="subhead">Os mesmos termos devem aparecer na interface, nos relatórios e na especificação.</p></div></div>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Termo</th><th scope="col">Significado</th></tr></thead><tbody>
+        <tr><td>Conciliação</td><td>Comparação entre registros equivalentes das duas fontes.</td></tr>
+        <tr><td>Horas de ponto</td><td>Tempo válido da jornada, considerando os intervalos aplicáveis.</td></tr>
+        <tr><td>Horas Monday</td><td>Duração elegível atribuída à pessoa em atividades no período.</td></tr>
+        <tr><td>Diferença diária</td><td>Horas Monday menos horas de ponto, com sinal.</td></tr>
+        <tr><td>Saldo do período</td><td>Soma das diferenças diárias com sinal.</td></tr>
+        <tr><td>Divergência acumulada absoluta</td><td>Soma das magnitudes diárias, sem compensar sinais opostos.</td></tr>
+        <tr><td>Tolerância</td><td>Faixa de diferença aceita na classificação numérica; o valor real continua visível.</td></tr>
+        <tr><td>Taxa de conciliação</td><td>Percentual de dias conciliados entre dias elegíveis, completos e encerrados.</td></tr>
+        <tr><td>Cobertura</td><td>Percentual de dias esperados elegíveis e encerrados que têm dados completos.</td></tr>
+        <tr><td>Não calculável</td><td>Não há base válida para calcular o indicador, por exemplo denominador zero.</td></tr>
+        <tr><td>Não aplicável</td><td>Dia excluído da comparação por regra explícita de jornada ou calendário.</td></tr>
+        <tr><td>Correspondência</td><td>Vínculo entre a mesma pessoa no cadastro interno e nas duas fontes.</td></tr>
+        <tr><td>Tratamento</td><td>Andamento da solicitação e da decisão sobre a divergência.</td></tr>
+        <tr><td>Auditoria</td><td>Histórico de quem fez o quê, quando, por qual motivo e com quais alterações.</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <div class="empty" id="sem-resultados" hidden><h2>Nenhum capítulo encontrado</h2><p>Revise a palavra buscada ou o perfil selecionado.</p><button class="button" id="restaurar" type="button">Mostrar todos os capítulos</button></div>
+    <footer>Conciliação de horas · Manual funcional proposto · Versão 1.0 · 13/09/2026<br>Documento local e autossuficiente. Ilustrações fictícias. Fonte de requisitos: <a href="especificacao-funcional.md">especificação funcional</a>.</footer>
+  </main>
+  <script>
+    (() => {
+      const search = document.getElementById('busca');
+      const chapters = [...document.querySelectorAll('.chapter')];
+      const roleButtons = [...document.querySelectorAll('[data-role]')];
+      const navLinks = [...document.querySelectorAll('.sidebar nav a')];
+      const status = document.getElementById('resultado-busca');
+      const empty = document.getElementById('sem-resultados');
+      const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const chapterText = new Map(chapters.map(chapter => [chapter.id, normalize(chapter.textContent)]));
+      let role = 'todos';
+      let searchExpanded = new Map();
+      let printStates = [];
+
+      function applyFilters() {
+        const query = normalize(search.value.trim());
+        const terms = query.split(/\s+/).filter(Boolean);
+        let visible = 0;
+        for (const chapter of chapters) {
+          const roles = chapter.dataset.roles.split(' ');
+          const roleMatches = role === 'todos' || role === 'arquiteto' || roles.includes('todos') || roles.includes(role);
+          const textMatches = terms.every(term => chapterText.get(chapter.id).includes(term));
+          chapter.hidden = !(roleMatches && textMatches);
+          if (!chapter.hidden) visible += 1;
+          const nav = navLinks.find(link => link.hash === '#' + chapter.id);
+          if (nav) nav.hidden = chapter.hidden;
+        }
+        if (query) {
+          for (const detail of document.querySelectorAll('details')) {
+            if (!searchExpanded.has(detail)) searchExpanded.set(detail, detail.open);
+            if (!detail.closest('.chapter').hidden) detail.open = true;
+          }
+        } else {
+          searchExpanded.forEach((wasOpen, detail) => { detail.open = wasOpen; });
+          searchExpanded = new Map();
+        }
+        empty.hidden = visible !== 0;
+        roleButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.role === role)));
+        const selected = roleButtons.find(button => button.dataset.role === role).textContent;
+        status.textContent = visible + ' de ' + chapters.length + ' capítulos visíveis · Perfil: ' + selected + (query ? ' · Busca: “' + search.value.trim() + '”.' : '.') + ' Os filtros organizam somente o manual.';
+      }
+
+      function resetFilters() { search.value = ''; role = 'todos'; applyFilters(); }
+      search.addEventListener('input', applyFilters);
+      roleButtons.forEach(button => button.addEventListener('click', () => { role = button.dataset.role; applyFilters(); }));
+      document.getElementById('limpar').addEventListener('click', resetFilters);
+      document.getElementById('restaurar').addEventListener('click', () => { resetFilters(); search.focus(); });
+
+      function revealTarget(hash) {
+        if (!hash || hash === '#') return null;
+        const target = document.getElementById(hash.slice(1));
+        if (target && target.classList.contains('chapter') && target.hidden) resetFilters();
+        return target;
+      }
+      document.querySelectorAll('a[href^="#"]').forEach(link => link.addEventListener('click', () => { revealTarget(link.hash); }));
+      window.addEventListener('hashchange', () => { revealTarget(location.hash); });
+      if (location.hash) { const target = revealTarget(location.hash); if (target) requestAnimationFrame(() => target.scrollIntoView()); }
+
+      if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver(entries => {
+          const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+          if (!visible.length) return;
+          navLinks.forEach(link => {
+            if (link.hash === '#' + visible[0].target.id) link.setAttribute('aria-current', 'location');
+            else link.removeAttribute('aria-current');
+          });
+        }, { rootMargin: '-8% 0px -66% 0px', threshold: 0 });
+        chapters.forEach(chapter => observer.observe(chapter));
+      }
+
+      window.addEventListener('beforeprint', () => {
+        printStates = [...document.querySelectorAll('details')].map(detail => [detail, detail.open]);
+        printStates.forEach(([detail]) => { detail.open = true; });
+      });
+      window.addEventListener('afterprint', () => { printStates.forEach(([detail, open]) => { detail.open = open; }); });
+      document.getElementById('imprimir').addEventListener('click', () => window.print());
+      applyFilters();
+    })();
+  </script>
+</body>
+</html>
