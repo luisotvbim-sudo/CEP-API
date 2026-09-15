@@ -14,11 +14,13 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, JwtKeyRing key
     private readonly JwtOptions _options = options.Value;
     private readonly SigningCredentials _credentials = new(keyRing.ActiveKey, SecurityAlgorithms.RsaSha256);
 
-    public AccessTokenResult CreateAccessToken(TokenUser user, DateTimeOffset now)
+    public AccessTokenResult CreateAccessToken(TokenUser user, Guid sessionFamilyId, string securityStamp, DateTimeOffset now)
     {
         var expiresAt = now.AddMinutes(_options.AccessTokenMinutes);
         var claims = BaseClaims(user, now);
         claims.Add(new Claim("role", user.Role.ToString()));
+        claims.Add(new Claim("sid", sessionFamilyId.ToString()));
+        claims.Add(new Claim("security_version", SecurityVersion(securityStamp)));
         var token = WriteToken(claims, _options.ApiAudience, now, expiresAt, "at+jwt");
         return new AccessTokenResult(token, expiresAt);
     }
@@ -36,6 +38,9 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, JwtKeyRing key
 
     public string HashRefreshToken(string token)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
+    public static string SecurityVersion(string securityStamp)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(securityStamp)));
 
     private static List<Claim> BaseClaims(TokenUser user, DateTimeOffset now)
     {

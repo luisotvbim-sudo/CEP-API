@@ -22,6 +22,27 @@ namespace CepApi.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("CepApi.Domain.AllowedEmailDomain", b =>
+                {
+                    b.Property<string>("Domain")
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)")
+                        .HasColumnName("domain");
+
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_enabled");
+
+                    b.HasKey("Domain");
+
+                    b.ToTable("allowed_email_domains", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_allowed_email_domains_normalized", "domain = lower(domain) AND domain ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'");
+                        });
+                });
+
             modelBuilder.Entity("CepApi.Domain.AuditEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -59,6 +80,35 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganizationId", "CreatedAt");
 
                     b.ToTable("audit_events", (string)null);
+                });
+
+            modelBuilder.Entity("CepApi.Domain.EmailOutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProtectedPayload")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NextAttemptAt");
+
+                    b.ToTable("email_outbox", (string)null);
                 });
 
             modelBuilder.Entity("CepApi.Domain.Invitation", b =>

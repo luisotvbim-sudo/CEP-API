@@ -8,6 +8,7 @@ using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Identity;
 using CepApi.Infrastructure.Persistence;
+using CepApi.Infrastructure.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -20,11 +21,10 @@ namespace CepApi.IntegrationTests;
 
 public sealed class ApiWorkflowTests
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
-
     [Fact]
     public async Task Complete_invitation_login_and_product_grant_workflow_is_isolated_and_signed()
     {
@@ -32,7 +32,7 @@ public sealed class ApiWorkflowTests
         PostgreSqlContainer postgres;
         try
         {
-            postgres = new PostgreSqlBuilder().WithImage("postgres:17-alpine")
+            postgres = new PostgreSqlBuilder("postgres:17-alpine")
                 .WithDatabase("cep_api_tests").WithUsername("postgres").WithPassword("postgres").Build();
             await postgres.StartAsync(cancellationToken);
         }
@@ -48,6 +48,7 @@ public sealed class ApiWorkflowTests
         {
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Postgres", postgres.GetConnectionString());
+            builder.UseSetting("EmailOutbox:Enabled", "false");
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IEmailSender>();
@@ -67,36 +68,37 @@ public sealed class ApiWorkflowTests
         var createOrganization = await client.PostAsJsonAsync("/api/v1/admin/organizations", new CreateOrganizationRequest(
             "Acme Engenharia", "acme-engenharia", "admin@acme.test", [Product.Revit, Product.Zwcad]), cancellationToken);
         Assert.Equal(HttpStatusCode.Created, createOrganization.StatusCode);
+        await DispatchEmailAsync(factory.Services, cancellationToken);
         var adminCode = email.InvitationCodes["admin@acme.test"];
 
         client.DefaultRequestHeaders.Authorization = null;
         var acceptAdmin = await client.PostAsJsonAsync("/api/v1/auth/invitations/accept", new AcceptInvitationRequest(
             "admin@acme.test", adminCode, "Acme Admin", "correct horse battery staple", new ClientInfo("test")), cancellationToken);
         acceptAdmin.EnsureSuccessStatusCode();
-        var adminTokens = (await acceptAdmin.Content.ReadFromJsonAsync<TokenResponse>(JsonOptions, cancellationToken))!;
+        var adminTokens = (await acceptAdmin.Content.ReadFromJsonAsync<TokenResponse>(Json, cancellationToken))!;
 
         UseToken(client, adminTokens.AccessToken);
         var inviteUser = await client.PostAsJsonAsync("/api/v1/organization/invitations", new InviteUserRequest(
             "user@acme.test", UserRole.User, [Product.Revit]), cancellationToken);
         Assert.Equal(HttpStatusCode.Created, inviteUser.StatusCode);
+        await DispatchEmailAsync(factory.Services, cancellationToken);
 
         client.DefaultRequestHeaders.Authorization = null;
         var acceptUser = await client.PostAsJsonAsync("/api/v1/auth/invitations/accept", new AcceptInvitationRequest(
             "user@acme.test", email.InvitationCodes["user@acme.test"], "Plugin User",
             "correct horse battery staple", new ClientInfo("revit", "2026.1", "install-1")), cancellationToken);
         acceptUser.EnsureSuccessStatusCode();
-        var userTokens = (await acceptUser.Content.ReadFromJsonAsync<TokenResponse>(JsonOptions, cancellationToken))!;
+        var userTokens = (await acceptUser.Content.ReadFromJsonAsync<TokenResponse>(Json, cancellationToken))!;
         UseToken(client, userTokens.AccessToken);
 
         var revitGrantResponse = await client.PostAsJsonAsync("/api/v1/plugin/grants",
             new CreatePluginGrantRequest(Product.Revit, "2026.1", "install-1"), cancellationToken);
         revitGrantResponse.EnsureSuccessStatusCode();
-        var revitGrant = (await revitGrantResponse.Content.ReadFromJsonAsync<PluginGrantResponse>(JsonOptions, cancellationToken))!;
+        var revitGrant = (await revitGrantResponse.Content.ReadFromJsonAsync<PluginGrantResponse>(Json, cancellationToken))!;
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(revitGrant.GrantToken);
         Assert.Equal("revit", jwt.Claims.Single(x => x.Type == "product").Value);
         Assert.Equal(TimeSpan.FromHours(72), jwt.ValidTo - jwt.ValidFrom);
-        Assert.InRange(revitGrant.ExpiresAt - new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero),
-            TimeSpan.Zero, TimeSpan.FromSeconds(1));
+        Assert.Equal(revitGrant.ExpiresAt.ToUnixTimeSeconds(), new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero).ToUnixTimeSeconds());
 
         var denied = await client.PostAsJsonAsync("/api/v1/plugin/grants",
             new CreatePluginGrantRequest(Product.Zwcad, "2026.1", "install-1"), cancellationToken);
@@ -110,13 +112,13 @@ public sealed class ApiWorkflowTests
         ]);
         var telemetryResponse = await client.PostAsJsonAsync("/api/v1/plugin/telemetry/events", telemetryBatch, cancellationToken);
         telemetryResponse.EnsureSuccessStatusCode();
-        var telemetryResult = (await telemetryResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(JsonOptions, cancellationToken))!;
+        var telemetryResult = (await telemetryResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(Json, cancellationToken))!;
         Assert.Equal(1, telemetryResult.Accepted);
         Assert.Equal(0, telemetryResult.Duplicates);
 
         var duplicateResponse = await client.PostAsJsonAsync("/api/v1/plugin/telemetry/events", telemetryBatch, cancellationToken);
         duplicateResponse.EnsureSuccessStatusCode();
-        var duplicateResult = (await duplicateResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(JsonOptions, cancellationToken))!;
+        var duplicateResult = (await duplicateResponse.Content.ReadFromJsonAsync<PluginTelemetryIngestionResponse>(Json, cancellationToken))!;
         Assert.Equal(0, duplicateResult.Accepted);
         Assert.Equal(1, duplicateResult.Duplicates);
 
@@ -124,7 +126,7 @@ public sealed class ApiWorkflowTests
         var summaryResponse = await client.GetAsync(
             "/api/v1/organization/telemetry/summary?product=revit&command=export.ifc", cancellationToken);
         summaryResponse.EnsureSuccessStatusCode();
-        var summary = (await summaryResponse.Content.ReadFromJsonAsync<PluginTelemetrySummaryResponse>(JsonOptions, cancellationToken))!;
+        var summary = (await summaryResponse.Content.ReadFromJsonAsync<PluginTelemetrySummaryResponse>(Json, cancellationToken))!;
         Assert.Equal(1, summary.TotalEvents);
         Assert.Equal(1, summary.UniqueUsers);
         Assert.Equal(1, summary.Succeeded);
@@ -144,6 +146,8 @@ public sealed class ApiWorkflowTests
         await using var scope = services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.MigrateAsync(cancellationToken);
+        db.AllowedEmailDomains.AddRange(new AllowedEmailDomain { Domain = "example.com" }, new AllowedEmailDomain { Domain = "acme.test" });
+        await db.SaveChangesAsync(cancellationToken);
         var manager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var now = DateTimeOffset.UtcNow;
         var systemAdmin = new ApplicationUser
@@ -166,7 +170,13 @@ public sealed class ApiWorkflowTests
     {
         var response = await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, password, new ClientInfo("test")), cancellationToken);
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<TokenResponse>(JsonOptions, cancellationToken))!;
+        return (await response.Content.ReadFromJsonAsync<TokenResponse>(Json, cancellationToken))!;
+    }
+
+    private static async Task DispatchEmailAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        await using var scope = services.CreateAsyncScope();
+        Assert.True(await scope.ServiceProvider.GetRequiredService<EmailOutboxDispatcher>().DispatchOneAsync(cancellationToken));
     }
 
     private static void UseToken(HttpClient client, string token)

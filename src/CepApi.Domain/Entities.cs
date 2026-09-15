@@ -93,3 +93,13 @@ public sealed class PluginUsageEvent
     public required string HostVersion { get; set; }
     public required string InstallationId { get; set; }
 }
+
+public sealed class EmailOutboxMessage
+{
+    public Guid Id { get; set; } = Guid.CreateVersion7();
+    public required string ProtectedPayload { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset NextAttemptAt { get; set; }
+    public int Attempts { get; set; }
+}

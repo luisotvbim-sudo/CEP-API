@@ -1,0 +1,140 @@
+# Standalone production file: do not merge with compose.yaml.
+name: cep-api-production
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+x-api: &api
+  image: cep-api:${API_IMAGE_TAG:-local}
+  build: .
+  user: "1654:1654"
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  environment: &api-env
+    ASPNETCORE_ENVIRONMENT: Production
+    DataProtection__KeysPath: /var/lib/cep-api/keys
+    Jwt__KeyId: ${JWT_KEY_ID:?Set a unique JWT key id}
+    Email__Host: ${SMTP_HOST:?Set SMTP host}
+    Email__Port: ${SMTP_PORT:-587}
+    Email__UseSsl: ${SMTP_USE_SSL:-false}
+    Email__FromAddress: ${SMTP_FROM:?Set sender address}
+    AllowedHosts: ${API_DOMAIN:?Set API domain};localhost
+    ReverseProxy__KnownProxies__0: 172.30.10.2
+  volumes:
+    - protection_keys:/var/lib/cep-api/keys
+  logging: *logging
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    command: [postgres, -c, log_connections=on, -c, log_disconnections=on, -c, log_lock_waits=on]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    stop_grace_period: 1m
+    environment:
+      POSTGRES_DB: cep_api
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password, owner_password, runtime_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/init-db.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    networks: [database]
+    mem_limit: 4g
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d cep_api"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  migrate:
+    <<: *api
+    command: [migrate]
+    environment:
+      <<: *api-env
+      EmailOutbox__Enabled: "false"
+    secrets:
+      - source: migration_connection
+        target: ConnectionStrings__Postgres
+      - source: jwt_private_key
+        target: Jwt__PrivateKeyPem
+      - source: security_code_hmac
+        target: SecurityCodes__HmacKey
+    networks: [database]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  api:
+    <<: *api
+    restart: unless-stopped
+    secrets:
+      - source: runtime_connection
+        target: ConnectionStrings__Postgres
+      - source: jwt_private_key
+        target: Jwt__PrivateKeyPem
+      - source: security_code_hmac
+        target: SecurityCodes__HmacKey
+      - source: smtp_username
+        target: Email__Username
+      - source: smtp_password
+        target: Email__Password
+    networks: [frontend, database]
+    mem_limit: 2g
+    pids_limit: 256
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://localhost:8080/health/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API domain}
+    ports: ["443:443"]
+    secrets: [origin_certificate, origin_private_key]
+    volumes:
+      - ./deploy/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./deploy/cloudflare-realip.conf:/etc/nginx/cloudflare-realip.conf:ro
+    networks:
+      frontend:
+        ipv4_address: 172.30.10.2
+    depends_on:
+      api: {condition: service_healthy}
+    mem_limit: 128m
+    pids_limit: 128
+    logging: *logging
+
+networks:
+  frontend:
+    ipam:
+      config: [{subnet: 172.30.10.0/28, ip_range: 172.30.10.8/29}]
+  database:
+    internal: true
+
+volumes:
+  postgres_data:
+  protection_keys:
+
+secrets:
+  postgres_password: {file: '${SECRETS_DIR:-./.local/production}/postgres_password'}
+  owner_password: {file: '${SECRETS_DIR:-./.local/production}/owner_password'}
+  runtime_password: {file: '${SECRETS_DIR:-./.local/production}/runtime_password'}
+  runtime_connection: {file: '${SECRETS_DIR:-./.local/production}/runtime_connection'}
+  migration_connection: {file: '${SECRETS_DIR:-./.local/production}/migration_connection'}
+  jwt_private_key: {file: '${SECRETS_DIR:-./.local/production}/jwt-private.pem'}
+  security_code_hmac: {file: '${SECRETS_DIR:-./.local/production}/security-code-hmac'}
+  smtp_username: {file: '${SECRETS_DIR:-./.local/production}/smtp_username'}
+  smtp_password: {file: '${SECRETS_DIR:-./.local/production}/smtp_password'}
+  origin_certificate: {file: '${SECRETS_DIR:-./.local/production}/origin-certificate.pem'}
+  origin_private_key: {file: '${SECRETS_DIR:-./.local/production}/origin-private.key'}

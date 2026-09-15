@@ -25,8 +25,9 @@ public sealed class SmtpEmailSender(IOptions<EmailOptions> options) : IEmailSend
         message.Subject = subject;
         message.Body = new TextPart("plain") { Text = body };
 
-        using var client = new SmtpClient();
-        var socketOptions = _options.UseSsl ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.Auto;
+        using var client = new SmtpClient { Timeout = 15000 };
+        var socketOptions = _options.AllowInsecureTransport ? SecureSocketOptions.None
+            : _options.UseSsl ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
         await client.ConnectAsync(_options.Host, _options.Port, socketOptions, cancellationToken);
         if (!string.IsNullOrWhiteSpace(_options.Username))
         {
