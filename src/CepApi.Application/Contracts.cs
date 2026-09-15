@@ -23,6 +23,38 @@ public sealed record UpdateProfileRequest([Required, MaxLength(200)] string Disp
 public sealed record CreatePluginGrantRequest(Product Product, [Required, MaxLength(50)] string PluginVersion,
     [Required, MaxLength(200)] string InstallationId);
 public sealed record PluginGrantResponse(string GrantToken, DateTimeOffset ExpiresAt);
+public sealed record PluginTelemetryEventRequest(
+    Guid EventId,
+    [Required, MaxLength(100)] string Command,
+    DateTimeOffset OccurredAt,
+    int? DurationMs,
+    PluginUsageOutcome Outcome,
+    [MaxLength(100)] string? ErrorCode);
+public sealed record CreatePluginTelemetryBatchRequest(
+    Product Product,
+    [Required, MaxLength(50)] string PluginVersion,
+    [Required, MaxLength(50)] string HostVersion,
+    [Required, MaxLength(200)] string InstallationId,
+    [Required, MinLength(1), MaxLength(PluginTelemetryRules.MaxBatchSize)] IReadOnlyCollection<PluginTelemetryEventRequest> Events);
+public sealed record PluginTelemetryIngestionResponse(int Received, int Accepted, int Duplicates);
+public sealed record PluginCommandTelemetrySummary(
+    string Command,
+    long Uses,
+    int UniqueUsers,
+    long Succeeded,
+    long Failed,
+    long Cancelled,
+    double? AverageDurationMs);
+public sealed record PluginTelemetrySummaryResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    long TotalEvents,
+    int UniqueUsers,
+    long Succeeded,
+    long Failed,
+    long Cancelled,
+    double? AverageDurationMs,
+    IReadOnlyCollection<PluginCommandTelemetrySummary> Commands);
 
 public sealed record UserResponse(Guid Id, string DisplayName, string Email, Guid? OrganizationId, UserRole Role, UserStatus Status, IReadOnlyCollection<Product> Products);
 public sealed record SessionResponse(Guid Id, string ClientType, string? ClientVersion, string? InstallationId, string? IpAddress, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, DateTimeOffset? LastUsedAt);

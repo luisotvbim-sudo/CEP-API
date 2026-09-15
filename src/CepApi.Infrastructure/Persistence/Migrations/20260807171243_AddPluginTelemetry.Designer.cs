@@ -3,6 +3,7 @@ using System;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CepApi.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260807171243_AddPluginTelemetry")]
+    partial class AddPluginTelemetry
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,27 +24,6 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("CepApi.Domain.AllowedEmailDomain", b =>
-                {
-                    b.Property<string>("Domain")
-                        .HasMaxLength(253)
-                        .HasColumnType("character varying(253)")
-                        .HasColumnName("domain");
-
-                    b.Property<bool>("IsEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("is_enabled");
-
-                    b.HasKey("Domain");
-
-                    b.ToTable("allowed_email_domains", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_allowed_email_domains_normalized", "domain = lower(domain) AND domain ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'");
-                        });
-                });
 
             modelBuilder.Entity("CepApi.Domain.AuditEvent", b =>
                 {
@@ -80,35 +62,6 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganizationId", "CreatedAt");
 
                     b.ToTable("audit_events", (string)null);
-                });
-
-            modelBuilder.Entity("CepApi.Domain.EmailOutboxMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Attempts")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("NextAttemptAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ProtectedPayload")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NextAttemptAt");
-
-                    b.ToTable("email_outbox", (string)null);
                 });
 
             modelBuilder.Entity("CepApi.Domain.Invitation", b =>

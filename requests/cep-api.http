@@ -47,3 +47,29 @@ Content-Type: application/json
 
 ### Public signing keys
 GET {{baseUrl}}/.well-known/jwks.json
+
+### Send plugin usage telemetry (safe to retry with the same eventId)
+POST {{baseUrl}}/api/v1/plugin/telemetry/events
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "product": "revit",
+  "pluginVersion": "2026.1.0",
+  "hostVersion": "2026",
+  "installationId": "0f09e7a2-d292-4d3e-96be-4e7b193ce879",
+  "events": [
+    {
+      "eventId": "da8ffdb8-1683-4c09-bba5-07099a1be779",
+      "command": "export.ifc",
+      "occurredAt": "2026-08-07T13:20:45Z",
+      "durationMs": 1850,
+      "outcome": "succeeded",
+      "errorCode": null
+    }
+  ]
+}
+
+### Organization telemetry summary (OrganizationAdmin)
+GET {{baseUrl}}/api/v1/organization/telemetry/summary?product=revit&command=export.ifc
+Authorization: Bearer {{accessToken}}

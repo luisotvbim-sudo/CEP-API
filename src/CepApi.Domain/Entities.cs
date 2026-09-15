@@ -76,6 +76,24 @@ public sealed class AuditEvent
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+public sealed class PluginUsageEvent
+{
+    public Guid Id { get; set; } = Guid.CreateVersion7();
+    public Guid ClientEventId { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid UserId { get; set; }
+    public Product Product { get; set; }
+    public required string Command { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+    public DateTimeOffset ReceivedAt { get; set; }
+    public int? DurationMs { get; set; }
+    public PluginUsageOutcome Outcome { get; set; }
+    public string? ErrorCode { get; set; }
+    public required string PluginVersion { get; set; }
+    public required string HostVersion { get; set; }
+    public required string InstallationId { get; set; }
+}
+
 public sealed class EmailOutboxMessage
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
