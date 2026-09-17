@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+const base = 'http://127.0.0.1:4177';
+const get = async path => {const response = await fetch(base + path); assert.equal(response.status,200); return response.json();};
+const [{users},{employees},snapshot] = await Promise.all([get('/api/users'),get('/api/vr/employees'),get('/api/sessions')]);
+assert.equal(snapshot.complete,true,'Complete the Monday sync first');
+const normalized = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLowerCase();
+const pairs = users.flatMap(user => {
+  const matches = employees.filter(employee => (user.email && employee.email && user.email.toLowerCase() === employee.email.toLowerCase()) || normalized(user.name) === normalized(employee.name));
+  return matches.length === 1 ? [{user,employee:matches[0],sessions:snapshot.sessions.filter(s=>s.userId===user.id).length}] : [];
+}).sort((a,b)=>b.sessions-a.sessions);
+assert.ok(pairs.length > 0,'Select a real pair manually when no unique suggestion exists');
+const pair = pairs[0];
+const today = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const end = new Date(today+'T12:00:00Z'); end.setUTCDate(end.getUTCDate()-1);
+const start = new Date(end); start.setUTCDate(start.getUTCDate()-6);
+const query = new URLSearchParams({userId:pair.user.id,employeeId:pair.employee.id,from:start.toISOString().slice(0,10),to:end.toISOString().slice(0,10),confirmed:'true'});
+const result = await get('/api/comparison?'+query);
+assert.equal(result.rows.length,7);
+const comparable = result.rows.filter(row=>row.differenceSeconds!==null);
+assert.ok(comparable.every(row=>row.differenceSeconds===row.mondaySeconds-row.vrSeconds));
+assert.ok(result.rows.filter(row=>row.vrSeconds===null || row.mondaySeconds===null).every(row=>row.differenceSeconds===null));
+for (const [field,rowField] of [['mondaySeconds','mondaySeconds'],['vrSeconds','vrSeconds'],['differenceSeconds','differenceSeconds']]) assert.equal(result.summary[field],comparable.length ? comparable.reduce((sum,row)=>sum+row[rowField],0) : null);
+assert.equal(result.summary.comparedDays,comparable.length);
+assert.equal(result.summary.absoluteDifferenceSeconds,comparable.length ? comparable.reduce((sum,row)=>sum+Math.abs(row.differenceSeconds),0) : null);
+query.delete('confirmed');
+assert.equal((await fetch(base+'/api/comparison?'+query)).status,400);
+console.log(JSON.stringify({passed:true,days:result.rows.length,comparedDays:result.summary.comparedDays,excludedDays:result.summary.excludedDays,exploratory:result.exploratory,commonBase:true,confirmationRequired:true}));

@@ -1,0 +1,26 @@
+// Requires a locally running lab configured with VR_TOKEN_FILE.
+import assert from 'node:assert/strict';
+const base = 'http://127.0.0.1:4177';
+const employeesResponse = await fetch(base + '/api/vr/employees');
+assert.equal(employeesResponse.status, 200);
+const { employees } = await employeesResponse.json();
+assert.ok(employees.length > 0);
+const employeeId = employees[0].id;
+const today = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const end = new Date(today + 'T12:00:00Z'); end.setUTCDate(end.getUTCDate() - 1);
+const start = new Date(end); start.setUTCDate(start.getUTCDate() - 6);
+const from = start.toISOString().slice(0,10), to = end.toISOString().slice(0,10);
+const query = new URLSearchParams({employeeId,from,to});
+const response = await fetch(base + '/api/vr/work-days?' + query);
+assert.equal(response.status, 200);
+const report = await response.json();
+assert.equal(String(report.employeeId),String(employeeId));
+assert.equal(report.rows.length,7);
+assert.equal(new Set(report.rows.map(row=>row.date)).size,7);
+assert.ok(report.rows.every(row=>row.date>=from && row.date<=to));
+assert.ok(report.rows.every(row=>row.totalSeconds===null || Number.isInteger(row.totalSeconds) && row.totalSeconds>=0));
+assert.ok(report.rows.every(row=>row.state !== 'missing' || row.totalSeconds===null));
+assert.ok(report.rows.some(row=>row.totalSeconds!==null),'At least one real daily total is required for this smoke test');
+const invalid = await fetch(base + '/api/vr/work-days?' + new URLSearchParams({employeeId,from:'2026-01-01',to:'2026-03-01'}));
+assert.equal(invalid.status,400);
+console.log(JSON.stringify({passed:true,employees:employees.length,days:report.rows.length,reportedDays:report.coverage.reportedDays,missingDays:report.coverage.missingDays,complete:report.coverage.complete,dateBound:true,missingNotZero:true}));

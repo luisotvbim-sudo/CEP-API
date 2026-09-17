@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CEP · Laboratório Monday</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/" aria-label="CEP início"><span class="brand-mark">C</span> CEP <span class="brand-divider">/</span><span class="brand-area">Dados & integrações</span></a><a href="/comparacao" class="text-button">Comparar Monday + VR →</a></header>
+  <main>
+    <section class="page-intro"><div><p class="eyebrow">LABORATÓRIO DE INTEGRAÇÃO</p><h1>Onde o tempo está sendo alocado?</h1><p class="intro-copy">Explore os apontamentos do Monday por pessoa e confira a atividade de origem de cada sessão.</p></div><span class="lab-tag">MONDAY / 01</span></section>
+    <section class="sync-panel" aria-labelledby="sync-title"><div class="sync-icon" aria-hidden="true">↻</div><div class="sync-copy"><h2 id="sync-title">EG03_MICRO PLANEJAMENTO</h2><p id="sync-message" aria-live="polite">Consultando o estado da integração…</p><p id="sync-details" class="muted"></p><p id="sync-diagnostics" class="muted" hidden></p></div><button id="sync-button" type="button" class="primary" disabled>Sincronizar Monday <span aria-hidden="true">↗</span></button></section>
+    <div id="global-error" class="alert error" role="alert" hidden></div>
+    <section class="workspace">
+      <aside class="people-panel" aria-labelledby="people-title"><div class="panel-heading"><div><p class="eyebrow">01 · PESSOA</p><h2 id="people-title">Perfil no Monday</h2></div><span id="user-count" class="count">—</span></div><label for="person-search" class="sr-only">Buscar por nome ou e-mail</label><div class="search-wrap"><span aria-hidden="true">⌕</span><input id="person-search" type="search" placeholder="Buscar nome ou e-mail" autocomplete="off"></div><p class="people-help">Selecione uma pessoa para consultar suas sessões.</p><div id="users-state" class="small-state" aria-live="polite">Carregando perfis…</div><div id="people-list" class="people-list" role="group" aria-label="Perfis disponíveis"></div><div class="binding-note"><span aria-hidden="true">ⓘ</span><p>Esta seleção serve apenas para consulta. Ela não vincula o perfil a uma conta da CEP.</p></div></aside>
+      <section class="results-panel" aria-labelledby="results-title"><div class="results-heading"><div><p class="eyebrow">02 · APONTAMENTOS</p><h2 id="results-title">Selecione um perfil</h2><p id="selected-detail" class="muted">A pessoa que iniciou o relógio determina a autoria da sessão.</p></div><span id="snapshot-badge" class="status-badge">Sem consulta</span></div>
+        <form id="filters" class="filters"><fieldset><legend>Situação</legend><div class="segmented"><label><input name="state" type="radio" value="all" checked><span>Todas</span></label><label><input name="state" type="radio" value="running"><span>Em andamento</span></label><label><input name="state" type="radio" value="closed"><span>Encerradas</span></label></div></fieldset><div class="date-filter"><label for="date-from">Início do período</label><input id="date-from" type="date"></div><div class="date-filter"><label for="date-to">Fim do período</label><input id="date-to" type="date"></div><button id="clear-filters" type="button" class="text-button">Limpar</button></form>
+        <p class="filter-note">Período considera a data de início da sessão · Horários de São Paulo</p>
+        <div class="metrics"><article><p>Sessões encontradas</p><strong id="metric-total">—</strong><span>No filtro selecionado</span></article><article><p>Tempo apontado</p><strong id="metric-duration">—</strong><span id="duration-note">Duração na última coleta</span></article><article><p>Em andamento</p><strong id="metric-running">—</strong><span>Relógios abertos na coleta</span></article></div>
+        <section class="vr-panel" aria-labelledby="vr-title">
+          <div class="table-heading"><div><p class="eyebrow">VR MAIS · PONTO</p><h3 id="vr-title">Horas informadas pelo VR</h3></div><span id="vr-freshness" class="muted">Ainda não consultado</span></div>
+          <p class="vr-help">Confira o funcionário antes de consultar. A sugestão por nome ou e-mail não cria vínculo entre as contas.</p>
+          <form id="vr-form" class="vr-filters"><div class="vr-person"><label for="vr-employee">Funcionário no VR</label><select id="vr-employee" disabled><option value="">Carregando funcionários…</option></select></div><div class="date-filter"><label for="vr-from">Início</label><input id="vr-from" type="date" required></div><div class="date-filter"><label for="vr-to">Fim</label><input id="vr-to" type="date" required></div><button id="vr-query" class="primary" type="submit" disabled>Consultar ponto</button></form>
+          <p id="vr-match" class="filter-note">Escolha um funcionário do VR. Os períodos das duas fontes são independentes.</p>
+          <div id="vr-state" class="vr-state" aria-live="polite">Aguardando a escolha do funcionário e a consulta.</div>
+          <div id="vr-results" hidden><div class="vr-summary"><div><span id="vr-total-label">Total informado pelo VR</span><strong id="vr-total">—</strong></div><p id="vr-coverage" class="muted"></p></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Total informado</th><th>Batidas</th><th>Disponibilidade</th></tr></thead><tbody id="vr-body"></tbody></table></div></div>
+          <p class="vr-disclaimer">Total informado pela fonte, sem descontar intervalos novamente. O tratamento de exceções ainda precisa de homologação. Não há conciliação numérica automática com o Monday.</p>
+        </section>
+        <div id="result-notice" class="alert" hidden></div><div class="table-heading"><h3>Sessões e atividades · Monday</h3><span id="table-count" class="muted">—</span></div><div id="results-state" class="empty-state" aria-live="polite"><span class="empty-icon" aria-hidden="true">◷</span><h3>Comece por uma pessoa</h3><p>Escolha um perfil ao lado para explorar seus apontamentos.</p></div>
+        <div id="table-wrap" class="table-wrap" hidden><table><thead><tr><th>Atividade / serviço</th><th>Início</th><th>Fim</th><th>Duração</th><th>Situação</th></tr></thead><tbody id="sessions-body"></tbody></table><button id="load-more" class="text-button" type="button" hidden>Mostrar mais 100 sessões</button></div>
+        <footer class="results-footer"><span>Serviço = item ou subitem de origem no Monday.</span><span>Consulta ao retrato da última sincronização</span></footer>
+      </section>
+    </section>
+    <footer class="page-footer"><strong>CEP · Monday Lab</strong><span>Teste de filtragem · Sem alteração nos dados de origem</span></footer>
+  </main>
+</body>
+</html>
