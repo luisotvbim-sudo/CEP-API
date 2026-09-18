@@ -14,6 +14,16 @@ node tools/monday-lab/server.mjs
 
 Abra http://127.0.0.1:4177. Selecione um perfil por nome/e-mail, sincronize e experimente os filtros de situação e período. Pare o servidor com Ctrl+C.
 
+Para manter o laboratório em segundo plano no Windows, depois de definir as variáveis acima, execute na raiz do repositório:
+
+```powershell
+$labProcess = Start-Process -FilePath (Get-Command node).Source -ArgumentList 'tools/monday-lab/server.mjs' -WorkingDirectory (Get-Location).Path -WindowStyle Hidden -PassThru
+# Para encerrar este processo durante a mesma sessão PowerShell:
+# Stop-Process -Id $labProcess.Id
+```
+
+Use uma das duas formas de execução, pois ambas ocupam a porta 4177. O processo em segundo plano não inicia automaticamente após reiniciar o Windows. Se o servidor parar, a página aberta perde a conexão; ao reiniciar, é necessário sincronizar novamente, pois os dados ficam em memória.
+
 ## Escopo
 
 - Somente o Micro Planejamento e seus subitens, com a permissão da credencial configurada.

@@ -7,7 +7,7 @@ const dateFormatter = new Intl.DateTimeFormat('pt-BR', {timeZone:'America/Sao_Pa
 function date(value) { if (!value) return '—'; const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? '—' : dateFormatter.format(parsed); }
 function duration(value) { const seconds = Math.max(0, Math.floor(Number(value) || 0)); return `${Math.floor(seconds / 3600)}h ${String(Math.floor(seconds % 3600 / 60)).padStart(2,'0')}m`; }
 function el(tag, text, className) { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; return node; }
-async function api(path, options) { const response = await fetch(path, options); const body = await response.json(); if (!response.ok) throw new Error(body.message || body.error?.message || body.error || 'Não foi possível concluir a consulta.'); return body; }
+async function api(path, options) { let response; try { response = await fetch(path, options); } catch { throw new Error('Sem conexão com o servidor local. Verifique se o laboratório está em execução e tente novamente.'); } const body = await response.json(); if (!response.ok) throw new Error(body.message || body.error?.message || body.error || 'Não foi possível concluir a consulta.'); return body; }
 function showError(message) { $('global-error').textContent = message; $('global-error').hidden = !message; }
 function diagnosticText(diagnostics) {
   if (!diagnostics) return '';
