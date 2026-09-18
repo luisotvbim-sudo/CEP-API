@@ -1,4 +1,5 @@
 import { validatePeriod } from './vr.mjs';
+import { buildShiftComparison } from './shift-comparison.mjs';
 
 const dayMs = 86400000;
 const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -73,6 +74,7 @@ export function buildComparison({ mondaySnapshot, mondayStatus, vrReport, userId
     } else row.state = row.reasons.some(reason => ['current_or_future_day', 'open_session'].includes(reason)) ? 'provisional' : row.reasons.some(reason => ['cross_midnight_session', 'invalid_session_duration', 'unknown_session_attribution'].includes(reason)) ? 'review' : 'missing';
   }
   const compared = rows.filter(row => row.differenceSeconds !== null);
+  for (const row of rows) row.shiftComparison = buildShiftComparison({ date: row.date, timeCards: row.timeCards, timeCardsComplete: vrDays.get(row.date)?.timeCardsComplete, vrSeconds: row.vrSeconds, sessions: mondaySnapshot?.sessions || [], userId, mondayComplete, diagnostics, now: nowInstant });
   const sum = selector => compared.length ? compared.reduce((total, row) => total + selector(row), 0) : null;
   return {
     userId: String(userId), employeeId: String(employeeId), from, to, exploratory: true,

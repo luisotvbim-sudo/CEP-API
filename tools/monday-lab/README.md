@@ -47,10 +47,19 @@ Avisos globais de qualidade da coleta permanecem visíveis; cálculos com esses 
 
 ## Verificação
 
+### Comparação por turno
+
+Nesta experiência, turno é cada par consecutivo de entrada e saída nas batidas do VR (por exemplo, 08:00–12:00 e 13:00–17:00), não o horário contratual previsto. O ponto do turno é a duração entre essas duas batidas. O Monday do turno soma somente a parte das sessões que coincide com esse intervalo, mantendo a autoria pelo iniciador. O detalhe informa também sobreposição entre sessões e tempo Monday fora dos intervalos de ponto.
+
+Batidas ímpares, inválidas ou fora de ordem não são reorganizadas nem completadas automaticamente. Jornadas noturnas do ponto exigem confirmação da data de cada batida e ficam indisponíveis neste protótipo. Dados incompletos, relógios abertos e dias ainda em andamento suspendem a diferença por turno. O total calculado entre batidas pode diferir do total diário informado pelo VR por ajustes ou abonos; ambos permanecem distintos na tela.
+
+### Comandos
+
 ```powershell
 node --test tools/monday-lab/server.test.mjs
 node --test tools/monday-lab/vr.test.mjs
 node --test tools/monday-lab/comparison.test.mjs
+node --test tools/monday-lab/shift-comparison.test.mjs
 # Com servidor aberto e coleta concluída:
 node tools/monday-lab/smoke.mjs
 node tools/monday-lab/vr-smoke.mjs
@@ -67,5 +76,11 @@ Conferir seleção por nome/e-mail, troca de perfil, situações em andamento/en
 - A leitura encontrou sessões indeterminadas/relógio aberto sem sessão identificável; a interface informa esses diagnósticos. Não pressupor que o total de relógios abertos seja igual ao total de sessões abertas atribuíveis.
 - A coleta é um retrato das páginas lidas em sequência, não uma transação consistente de toda a conta. A fonte pode mudar durante a leitura.
 - A página de comparação possui testes para a base comum de dias, sinais, diferenças absolutas, sessão atribuída ao iniciador, fonte ausente, dia atual, relógio aberto, travessia de meia-noite e encerramento exatamente à meia-noite (fim exclusivo). A exibição preserva segundos quando presentes.
+
+### Comparação por turno validada em 18/09/2026
+
+- Os 24 testes automatizados passaram, incluindo recorte das sessões nos intervalos, sobreposições, batidas incompletas e conversão histórica do fuso.
+- A consulta real de sete dias validou oito turnos calculados, com diferenças aritméticas consistentes e ausência de cálculo quando não havia base.
+- A interface foi conferida com a coluna por turno e o detalhamento dos intervalos, horas fora dos turnos e cobertura sem duplicar sobreposições.
 
 Resultados brutos, nomes, e-mails e tokens não são incluídos nesta documentação. As contagens da UI representam a coleta em memória e mudam quando uma nova sincronização é solicitada.

@@ -39,11 +39,12 @@ export function normalizeWorkDays(payload, { employeeId, from, to }, fetchedAt =
         const date = dailyDate(row?.date);
         if (!date) { diagnostics.unrecognizedRows++; continue; }
         if (date < from || date > to) { diagnostics.outOfRangeRows++; continue; }
-        if (daily.has(date)) { diagnostics.duplicateDays++; daily.set(date, { date, totalSeconds: null, totalText: null, timeCards: [], state: 'unrecognized' }); continue; }
+        if (daily.has(date)) { diagnostics.duplicateDays++; daily.set(date, { date, totalSeconds: null, totalText: null, timeCards: [], timeCardsComplete: false, state: 'unrecognized' }); continue; }
         const totalSeconds = duration(row.total_time);
         const timeCards = cards(row.time_cards);
         if (Array.isArray(row.time_cards)) diagnostics.unrecognizedTimeCards += row.time_cards.length - timeCards.length;
-        daily.set(date, { date, totalSeconds, totalText: totalSeconds === null ? null : row.total_time.trim(), timeCards, state: totalSeconds === null ? 'unrecognized' : 'reported' });
+        const timeCardsComplete = Array.isArray(row.time_cards) && timeCards.length === row.time_cards.length;
+        daily.set(date, { date, totalSeconds, totalText: totalSeconds === null ? null : row.total_time.trim(), timeCards, timeCardsComplete, state: totalSeconds === null ? 'unrecognized' : 'reported' });
       }
     }
   }
@@ -52,7 +53,7 @@ export function normalizeWorkDays(payload, { employeeId, from, to }, fetchedAt =
   const rows = [];
   for (let day = Date.parse(from); day <= Date.parse(to); day += dayMs) {
     const date = new Date(day).toISOString().slice(0, 10);
-    rows.push(daily.get(date) || { date, totalSeconds: null, totalText: null, timeCards: [], state: 'missing' });
+    rows.push(daily.get(date) || { date, totalSeconds: null, totalText: null, timeCards: [], timeCardsComplete: false, state: 'missing' });
   }
   const reportedDays = rows.filter(row => row.state === 'reported').length;
   const missingDays = rows.filter(row => row.state === 'missing').length;

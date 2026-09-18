@@ -22,6 +22,20 @@ assert.ok(result.rows.filter(row=>row.vrSeconds===null || row.mondaySeconds===nu
 for (const [field,rowField] of [['mondaySeconds','mondaySeconds'],['vrSeconds','vrSeconds'],['differenceSeconds','differenceSeconds']]) assert.equal(result.summary[field],comparable.length ? comparable.reduce((sum,row)=>sum+row[rowField],0) : null);
 assert.equal(result.summary.comparedDays,comparable.length);
 assert.equal(result.summary.absoluteDifferenceSeconds,comparable.length ? comparable.reduce((sum,row)=>sum+Math.abs(row.differenceSeconds),0) : null);
+let calculatedTurns = 0;
+for (const row of result.rows) {
+  assert.ok(row.shiftComparison, 'Expected per-shift comparison');
+  const shift = row.shiftComparison;
+  assert.ok(Array.isArray(shift.turns));
+  for (const turn of shift.turns) {
+    if (turn.differenceSeconds !== null) {
+      assert.equal(turn.differenceSeconds, turn.mondaySeconds - turn.pointSeconds);
+      assert.ok(turn.pointSeconds > 0);
+      calculatedTurns++;
+    }
+  }
+  if (!shift.turns.length) assert.equal(shift.differenceSeconds, null);
+}
 query.delete('confirmed');
 assert.equal((await fetch(base+'/api/comparison?'+query)).status,400);
-console.log(JSON.stringify({passed:true,days:result.rows.length,comparedDays:result.summary.comparedDays,excludedDays:result.summary.excludedDays,exploratory:result.exploratory,commonBase:true,confirmationRequired:true}));
+console.log(JSON.stringify({passed:true,days:result.rows.length,comparedDays:result.summary.comparedDays,excludedDays:result.summary.excludedDays,calculatedTurns,exploratory:result.exploratory,commonBase:true,confirmationRequired:true}));

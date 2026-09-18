@@ -40,3 +40,11 @@ test('missing credentials and upstream failure never become zero-hour reports', 
   const client = createVrClient({ token: 'synthetic', fetchImpl: async () => Response.json({ errors: ['private raw error'] }) });
   await assert.rejects(client.getEmployees(), error => error.safe && !error.message.includes('private'));
 });
+
+test('discarded time cards cannot silently create valid entry-exit pairs', () => {
+  const result = normalizeWorkDays(report([{ date: '2026-09-14', total_time: '08:00', time_cards: ['08:00', 'invalid', '12:00'] }, { date: '2026-09-15', total_time: '04:00', time_cards: ['08:00','12:00'] }]), filters);
+  assert.deepEqual(result.rows[0].timeCards, ['08:00','12:00']);
+  assert.equal(result.rows[0].timeCardsComplete, false);
+  assert.equal(result.rows[1].timeCardsComplete, true);
+  assert.equal(result.rows[2].timeCardsComplete, false);
+});
