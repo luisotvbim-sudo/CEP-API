@@ -18,7 +18,9 @@ Arquivos esperados:
 | `migration_connection` | `Host=postgres;Database=cep_api;Username=cep_api_owner;Password=...` |
 | `runtime_connection` | `Host=postgres;Database=cep_api;Username=cep_api_runtime;Password=...` |
 | `jwt-private.pem` | Chave privada RSA, preferencialmente 3072 bits, persistente |
-| `smtp_username`, `smtp_password` | Credenciais do provedor SMTP; arquivos vazios somente para relay autenticado por outro mecanismo |
+| `smtp_username`, `smtp_password` | Credenciais do provedor SMTP; no Resend, use `resend` como usuário e uma API Key restrita ao envio por `cep.lat` como senha |
+| `monday_token` | Token da API do Monday com acesso somente ao board configurado |
+| `vr_mais_token` | Token da API do Ponto VR Mais com o menor conjunto de permissões necessário |
 | `security-code-hmac` | Chave aleatória Base64 de pelo menos 32 bytes para proteger códigos curtos no banco |
 | `origin-certificate.pem`, `origin-private.key` | Certificado HTTPS e chave para o domínio da API |
 
@@ -26,7 +28,9 @@ As senhas nas conexões precisam coincidir com seus respectivos arquivos. Gere s
 
 Em Compose local, permissões de secrets baseados em arquivos dependem do bind mount: os processos precisam conseguir ler os arquivos. Uma opção é arquivos legíveis dentro do contêiner (`0444`) sob diretório do host protegido (`0700`); outra é ajustar proprietário/grupo por serviço. Teste a leitura como UID 1654 sem imprimir o conteúdo. Compose não é um cofre de segredos.
 
-O atualizador noturno detecta o GID do usuário não privilegiado na imagem e ajusta somente `security-code-hmac` para `root:<gid>` com modo `0640` antes de iniciar a janela de manutenção. Na primeira inicialização manual, aplique uma dessas duas estratégias antes de executar `migrate`.
+O exemplo de ambiente usa o Resend com TLS direto na porta 465; altere esses valores se trocar de provedor. Para habilitar as integrações, defina `MONDAY_ENABLED=true` e `VR_MAIS_ENABLED=true` no `.env`; o identificador do board e a versão da API do Monday também ficam nesse arquivo porque não são segredos. O atualizador noturno detecta o GID do usuário não privilegiado na imagem e ajusta `security-code-hmac`, `smtp_username`, `smtp_password`, `monday_token` e `vr_mais_token` para `root:<gid>` com modo `0640` antes de iniciar a janela de manutenção. Na primeira inicialização manual, aplique uma dessas duas estratégias antes de executar `migrate`.
+
+Crie os tokens sem quebra de linha no final e nunca os coloque no `.env`, em `appsettings.json`, no Dockerfile ou no Git. Eles são montados como arquivos somente no container da API, nos destinos `/run/secrets/WorkforceIntegrations__Monday__Token` e `/run/secrets/WorkforceIntegrations__VrMais__Token`. Quando uma integração estiver habilitada, a API recusará iniciar se o token estiver ausente ou se a URL configurada não usar HTTPS. Para rotacionar um token, substitua o arquivo correspondente e recrie somente o serviço `api`; não é necessário alterar o banco.
 
 O script `init-db.sh` cria os papéis apenas no primeiro uso de um volume vazio. `cep_api_owner` possui o schema e pode migrar; `cep_api_runtime` tem acesso aos dados, mas não é superusuário nem pode criar tabelas. Não altere senhas apenas nos arquivos esperando que um volume existente seja atualizado.
 

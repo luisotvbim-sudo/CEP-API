@@ -3,6 +3,7 @@ using System;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CepApi.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260914045033_TimeControlTeams")]
+    partial class TimeControlTeams
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -111,56 +114,6 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                     b.ToTable("email_outbox", (string)null);
                 });
 
-            modelBuilder.Entity("CepApi.Domain.ExternalWorkforceIdentity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Email")
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)");
-
-                    b.Property<string>("ExternalId")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTimeOffset>("FirstSeenAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTimeOffset>("LastSeenAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateTimeOffset?>("SourceUpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId", "Source", "ExternalId")
-                        .IsUnique();
-
-                    b.HasIndex("OrganizationId", "Source", "IsActive");
-
-                    b.ToTable("external_workforce_identities", (string)null);
-                });
-
             modelBuilder.Entity("CepApi.Domain.Invitation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -209,14 +162,9 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<Guid?>("WorkforcePersonId")
-                        .HasColumnType("uuid");
-
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId");
-
-                    b.HasIndex("WorkforcePersonId");
 
                     b.HasIndex("Email", "RevokedAt", "AcceptedAt");
 
@@ -412,173 +360,6 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("CepApi.Domain.WorkforcePerson", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)");
-
-                    b.Property<Guid>("MondayIdentityId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("VrMaisIdentityId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MondayIdentityId")
-                        .IsUnique();
-
-                    b.HasIndex("UserId")
-                        .IsUnique()
-                        .HasFilter("\"UserId\" IS NOT NULL");
-
-                    b.HasIndex("VrMaisIdentityId")
-                        .IsUnique();
-
-                    b.HasIndex("OrganizationId", "Email");
-
-                    b.ToTable("workforce_people", (string)null);
-                });
-
-            modelBuilder.Entity("CepApi.Domain.WorkforceSyncBatch", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("RequestedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId")
-                        .IsUnique()
-                        .HasFilter("\"Status\" = 'Running'");
-
-                    b.HasIndex("OrganizationId", "StartedAt");
-
-                    b.ToTable("workforce_sync_batches", (string)null);
-                });
-
-            modelBuilder.Entity("CepApi.Domain.WorkforceSyncSourceRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BatchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("CompleteSnapshot")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTimeOffset?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateOnly?>("CoverageFrom")
-                        .HasColumnType("date");
-
-                    b.Property<DateOnly?>("CoverageTo")
-                        .HasColumnType("date");
-
-                    b.Property<int>("CreatedCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("DeactivatedCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ErrorCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("ReceivedCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateTimeOffset>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<int>("TimeRecordCreatedCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TimeRecordReceivedCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TimeRecordRemovedCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TimeRecordUpdatedCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("UpdatedCount")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BatchId", "Source")
-                        .IsUnique();
-
-                    b.HasIndex("OrganizationId", "Source", "CompletedAt");
-
-                    b.ToTable("workforce_sync_source_runs", (string)null);
-                });
-
             modelBuilder.Entity("CepApi.Domain.WorkforceTeam", b =>
                 {
                     b.Property<Guid>("Id")
@@ -613,74 +394,6 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("workforce_teams", (string)null);
-                });
-
-            modelBuilder.Entity("CepApi.Domain.WorkforceTimeRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("DetailsJson")
-                        .HasColumnType("jsonb");
-
-                    b.Property<int?>("DurationSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset?>("EndedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ExternalIdentityId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ExternalKey")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<bool>("IsRemoved")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTimeOffset>("LastSyncedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateTimeOffset?>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("State")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("Title")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Url")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<DateOnly>("WorkDate")
-                        .HasColumnType("date");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExternalIdentityId", "WorkDate");
-
-                    b.HasIndex("OrganizationId", "Source", "ExternalKey")
-                        .IsUnique();
-
-                    b.HasIndex("OrganizationId", "WorkDate", "Source");
-
-                    b.ToTable("workforce_time_records", (string)null);
                 });
 
             modelBuilder.Entity("CepApi.Infrastructure.Identity.ApplicationUser", b =>
@@ -905,17 +618,6 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                     b.ToTable("user_tokens", (string)null);
                 });
 
-            modelBuilder.Entity("CepApi.Domain.ExternalWorkforceIdentity", b =>
-                {
-                    b.HasOne("CepApi.Domain.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
             modelBuilder.Entity("CepApi.Domain.Invitation", b =>
                 {
                     b.HasOne("CepApi.Domain.Organization", "Organization")
@@ -924,14 +626,7 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("CepApi.Domain.WorkforcePerson", "WorkforcePerson")
-                        .WithMany()
-                        .HasForeignKey("WorkforcePersonId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.Navigation("Organization");
-
-                    b.Navigation("WorkforcePerson");
                 });
 
             modelBuilder.Entity("CepApi.Domain.PasswordReset", b =>
@@ -978,60 +673,6 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                     b.Navigation("Team");
                 });
 
-            modelBuilder.Entity("CepApi.Domain.WorkforcePerson", b =>
-                {
-                    b.HasOne("CepApi.Domain.ExternalWorkforceIdentity", "MondayIdentity")
-                        .WithMany()
-                        .HasForeignKey("MondayIdentityId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("CepApi.Domain.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("CepApi.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("CepApi.Domain.ExternalWorkforceIdentity", "VrMaisIdentity")
-                        .WithMany()
-                        .HasForeignKey("VrMaisIdentityId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("MondayIdentity");
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("VrMaisIdentity");
-                });
-
-            modelBuilder.Entity("CepApi.Domain.WorkforceSyncBatch", b =>
-                {
-                    b.HasOne("CepApi.Domain.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("CepApi.Domain.WorkforceSyncSourceRun", b =>
-                {
-                    b.HasOne("CepApi.Domain.WorkforceSyncBatch", "Batch")
-                        .WithMany("Sources")
-                        .HasForeignKey("BatchId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Batch");
-                });
-
             modelBuilder.Entity("CepApi.Domain.WorkforceTeam", b =>
                 {
                     b.HasOne("CepApi.Domain.Organization", "Organization")
@@ -1039,25 +680,6 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                         .HasForeignKey("OrganizationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("CepApi.Domain.WorkforceTimeRecord", b =>
-                {
-                    b.HasOne("CepApi.Domain.ExternalWorkforceIdentity", "ExternalIdentity")
-                        .WithMany()
-                        .HasForeignKey("ExternalIdentityId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("CepApi.Domain.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ExternalIdentity");
 
                     b.Navigation("Organization");
                 });
@@ -1121,11 +743,6 @@ namespace CepApi.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("CepApi.Domain.WorkforceSyncBatch", b =>
-                {
-                    b.Navigation("Sources");
                 });
 
             modelBuilder.Entity("CepApi.Domain.WorkforceTeam", b =>

@@ -179,6 +179,17 @@ public sealed class AuthController(
         if (await db.Users.AnyAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken))
             return ApiProblem(StatusCodes.Status409Conflict, "The email is already in use.", "email_already_exists");
 
+        WorkforcePerson? workforcePerson = null;
+        if (invitation.WorkforcePersonId is { } workforcePersonId)
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT \"Id\" FROM workforce_people WHERE \"Id\" = {workforcePersonId} FOR UPDATE", cancellationToken);
+            workforcePerson = await db.WorkforcePeople.SingleOrDefaultAsync(x => x.Id == workforcePersonId &&
+                x.OrganizationId == invitation.OrganizationId, cancellationToken);
+            if (workforcePerson is null || workforcePerson.UserId is not null)
+                return ApiProblem(StatusCodes.Status409Conflict, "The workforce identity association is no longer available.", "workforce_person_unavailable");
+        }
+
         var user = new ApplicationUser
         {
             Id = Guid.CreateVersion7(),
@@ -204,6 +215,13 @@ public sealed class AuthController(
         }
         if (invitation.CanUseRevit) db.ProductAccesses.Add(new ProductAccess { UserId = user.Id, Product = Product.Revit, GrantedAt = now });
         if (invitation.CanUseZwcad) db.ProductAccesses.Add(new ProductAccess { UserId = user.Id, Product = Product.Zwcad, GrantedAt = now });
+        if (workforcePerson is not null)
+        {
+            workforcePerson.UserId = user.Id;
+            workforcePerson.DisplayName = user.DisplayName;
+            workforcePerson.Email = normalizedEmail!;
+            workforcePerson.UpdatedAt = now;
+        }
         invitation.AcceptedAt = now;
         await db.SaveChangesAsync(cancellationToken);
         await db.Entry(user).Collection(x => x.ProductAccesses).LoadAsync(cancellationToken);

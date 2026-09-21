@@ -34,6 +34,34 @@ Content-Type: application/json
 GET {{baseUrl}}/api/v1/me
 Authorization: Bearer {{accessToken}}
 
+### Synchronize Monday and VR Mais (OrganizationAdmin)
+POST {{baseUrl}}/api/v1/organization/time-control/synchronizations
+Authorization: Bearer {{accessToken}}
+
+### Reprocess the complete 60-day administrative window
+POST {{baseUrl}}/api/v1/organization/time-control/synchronizations?full=true
+Authorization: Bearer {{accessToken}}
+
+### List unassociated Monday identities
+GET {{baseUrl}}/api/v1/organization/time-control/external-identities?source=monday&mapped=false
+Authorization: Bearer {{accessToken}}
+
+### Associate identities and send an invitation
+POST {{baseUrl}}/api/v1/organization/time-control/people/invitations
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "email": "person@example.com",
+  "displayName": "Person Example",
+  "mondayIdentityId": "01999999-9999-7999-8999-999999999999",
+  "vrMaisIdentityId": "01999999-9999-7999-8999-999999999998"
+}
+
+### Administrative history (maximum 60 days)
+GET {{baseUrl}}/api/v1/organization/time-control/history?from=2026-09-01&to=2026-09-20
+Authorization: Bearer {{accessToken}}
+
 ### Create an offline Revit grant
 POST {{baseUrl}}/api/v1/plugin/grants
 Authorization: Bearer {{accessToken}}

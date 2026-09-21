@@ -1,6 +1,6 @@
-# CEP Plugins API
+# CEP API
 
-API multiempresa para administrar usuários dos plugins Revit e ZWCAD. A solução usa ASP.NET Core 10, PostgreSQL, ASP.NET Core Identity, access tokens JWT, refresh tokens rotativos e grants offline RS256 de 72 horas.
+Backend multiempresa para administrar usuários dos plugins Revit e ZWCAD e a aplicação de conciliação de horas. A solução usa ASP.NET Core 10, PostgreSQL, ASP.NET Core Identity, access tokens JWT, refresh tokens rotativos e grants offline RS256 de 72 horas.
 
 ## Recursos
 
@@ -10,7 +10,26 @@ API multiempresa para administrar usuários dos plugins Revit e ZWCAD. A soluç�
 - Acesso separado aos produtos Revit e ZWCAD.
 - Sessões revogáveis, lockout, rate limiting e detecção de reutilização de refresh token.
 - Auditoria administrativa, JWKS público, Swagger e health checks.
+- Equipes de controle de ponto e vínculos efetivos de membros e gestores.
 - Migrations explícitas, testes unitários e fluxo de integração com PostgreSQL real.
+
+## Controle de ponto
+
+A primeira etapa do backend implementa o cadastro de equipes e os vínculos de membros e gestores com vigência e histórico. Os endpoints ficam em `api/v1/organization/time-control/teams` e são restritos ao administrador da organização. O servidor impede nomes duplicados, vínculos sobrepostos e associação de usuários de outra organização.
+
+A importação administrativa do Monday e do Ponto VR Mais persiste identidades e apontamentos com retenção móvel de 90 dias. Calendário, regras de tolerância, tratamento de divergências e conciliação diária completa continuam nas próximas etapas descritas na [especificação funcional](docs/conciliacao-horas/especificacao-funcional.md).
+
+### Cadastro administrativo das identidades externas
+
+O backend já possui o fluxo administrativo que antecede a conciliação:
+
+- `POST /api/v1/organization/time-control/synchronizations` lê os diretórios do Monday e do VR Mais e persiste o resultado por organização.
+- `GET /api/v1/organization/time-control/external-identities` permite pesquisar e filtrar identidades ativas, associadas ou pendentes.
+- `POST /api/v1/organization/time-control/people/invitations` associa uma identidade Monday a uma identidade VR Mais e envia o convite do usuário.
+- `GET /api/v1/organization/time-control/people` lista as associações e o estado do convite/usuário.
+- `GET /api/v1/organization/time-control/history` consulta os registros persistidos de pessoas autorizadas em períodos de até 60 dias.
+
+O aceite do convite liga a conta criada à associação já aprovada pelo administrador. IDs externos não podem ser usados por duas pessoas, as sincronizações são isoladas por organização e falhas das fontes são apresentadas separadamente. Consulte [o contrato administrativo](docs/workforce-admin-integration.md) para os filtros, respostas e estados.
 
 ## Início rápido com containers
 
@@ -66,9 +85,12 @@ As chaves usam a sintaxe hierárquica do ASP.NET Core (`__` em variáveis de amb
 - `Email__Host`, `Email__Port`, `Email__UseSsl`, `Email__Username`, `Email__Password`, `Email__FromAddress` e `Email__FromName`: SMTP.
 - `Email__UseSsl=true` usa TLS direto (geralmente 465); `false` exige STARTTLS (geralmente 587). Transporte sem TLS só é permitido fora de produção, explicitamente com `Email__AllowInsecureTransport=true`.
 - `DataProtection__KeysPath`: diretório persistente das chaves que protegem o conteúdo da fila de e-mails; obrigatório em produção.
+- `WorkforceIntegrations__Monday__Enabled`, `WorkforceIntegrations__Monday__Token`, `WorkforceIntegrations__Monday__BoardId` e `WorkforceIntegrations__Monday__ApiVersion`: leitura dos usuários ativos inscritos no board configurado.
+- `WorkforceIntegrations__VrMais__Enabled` e `WorkforceIntegrations__VrMais__Token`: leitura do cadastro de colaboradores no Ponto VR Mais.
 - `ReverseProxy__KnownProxies__0`: IP do proxy confiável. Nunca confie em cabeçalhos de IP de qualquer origem.
 
 Arquivos montados em `/run/secrets` também são lidos como configuração hierárquica, por exemplo `Jwt__PrivateKeyPem`. No Compose de produção, as credenciais do banco para execução e migração são diferentes.
+Tokens das integrações devem ser fornecidos pelo mesmo mecanismo de segredos, nunca gravados em `appsettings.json` ou no repositório.
 
 Gere uma chave RSA fora do repositório e injete-a pelo gerenciador de segredos da plataforma:
 

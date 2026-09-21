@@ -18,6 +18,7 @@ public static class DependencyInjection
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
         services.Configure<SecurityCodeOptions>(configuration.GetSection(SecurityCodeOptions.SectionName));
+        services.Configure<WorkforceIntegrationOptions>(configuration.GetSection(WorkforceIntegrationOptions.SectionName));
         var protection = services.AddDataProtection().SetApplicationName("CEP-API");
         if (configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
             protection.PersistKeysToFileSystem(new DirectoryInfo(keysPath));
@@ -52,6 +53,15 @@ public static class DependencyInjection
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IEmailQueue, EmailOutbox>();
         services.AddScoped<IRegistrationEmailPolicy, RegistrationEmailPolicy>();
+        services.AddScoped<IWorkforceDirectorySyncService, WorkforceDirectorySyncService>();
+        services.AddHttpClient<MondayDirectorySource>(client => client.Timeout = TimeSpan.FromSeconds(45))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        services.AddHttpClient<VrMaisDirectorySource>(client => client.Timeout = TimeSpan.FromSeconds(45))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        services.AddScoped<IExternalWorkforceDirectorySource>(provider => provider.GetRequiredService<MondayDirectorySource>());
+        services.AddScoped<IExternalWorkforceDirectorySource>(provider => provider.GetRequiredService<VrMaisDirectorySource>());
+        services.AddScoped<IExternalWorkforceTimeSource>(provider => provider.GetRequiredService<MondayDirectorySource>());
+        services.AddScoped<IExternalWorkforceTimeSource>(provider => provider.GetRequiredService<VrMaisDirectorySource>());
         services.AddScoped<EmailOutboxDispatcher>();
         if (configuration.GetValue("EmailOutbox:Enabled", true))
             services.AddHostedService<EmailOutboxWorker>();
