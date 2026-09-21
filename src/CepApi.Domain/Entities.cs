@@ -31,6 +31,8 @@ public sealed class Invitation
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public Guid CreatedByUserId { get; set; }
+    public Guid? WorkforcePersonId { get; set; }
+    public WorkforcePerson? WorkforcePerson { get; set; }
     public DateTimeOffset? AcceptedAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
 }
