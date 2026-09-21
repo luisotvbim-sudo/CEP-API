@@ -232,6 +232,8 @@ static void ValidateProductionConfiguration(WebApplicationBuilder builder)
     var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>();
     var email = builder.Configuration.GetSection(EmailOptions.SectionName).Get<EmailOptions>();
     var securityCodes = builder.Configuration.GetSection(SecurityCodeOptions.SectionName).Get<SecurityCodeOptions>();
+    var workforce = builder.Configuration.GetSection(WorkforceIntegrationOptions.SectionName)
+        .Get<WorkforceIntegrationOptions>() ?? new WorkforceIntegrationOptions();
     if (string.IsNullOrWhiteSpace(jwt?.PrivateKeyPem))
         throw new InvalidOperationException("Jwt:PrivateKeyPem is required in Production.");
     if (string.IsNullOrWhiteSpace(email?.Host) || string.IsNullOrWhiteSpace(email.FromAddress))
@@ -251,6 +253,26 @@ static void ValidateProductionConfiguration(WebApplicationBuilder builder)
     }
     if (jwt.KeyId == "development-key" || jwt.AccessTokenMinutes is < 1 or > 15 || jwt.PluginGrantHours is < 1 or > 72)
         throw new InvalidOperationException("Configure a production Jwt:KeyId and bounded token lifetimes.");
+    ValidateWorkforceIntegration("Monday", workforce.Monday.Enabled, workforce.Monday.Token,
+        workforce.Monday.ApiUrl, workforce.Monday.BoardId);
+    ValidateWorkforceIntegration("VR Mais", workforce.VrMais.Enabled, workforce.VrMais.Token,
+        workforce.VrMais.ApiUrl);
+}
+
+static void ValidateWorkforceIntegration(
+    string name,
+    bool enabled,
+    string? token,
+    string apiUrl,
+    string? boardId = null)
+{
+    if (!enabled) return;
+    if (string.IsNullOrWhiteSpace(token))
+        throw new InvalidOperationException($"{name} token is required when the integration is enabled.");
+    if (!Uri.TryCreate(apiUrl, UriKind.Absolute, out var endpoint) || endpoint.Scheme != Uri.UriSchemeHttps)
+        throw new InvalidOperationException($"{name} API URL must use HTTPS.");
+    if (boardId is not null && string.IsNullOrWhiteSpace(boardId))
+        throw new InvalidOperationException($"{name} board id is required when the integration is enabled.");
 }
 
 static async Task BootstrapAdminAsync(IServiceProvider services, IConfiguration configuration)

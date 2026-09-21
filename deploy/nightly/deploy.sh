@@ -84,7 +84,9 @@ if [[ ! "$app_gid" =~ ^[0-9]+$ ]]; then
 fi
 for runtime_secret in "$hmac_file" \
   "$app_dir/.local/production/smtp_username" \
-  "$app_dir/.local/production/smtp_password"; do
+  "$app_dir/.local/production/smtp_password" \
+  "$app_dir/.local/production/monday_token" \
+  "$app_dir/.local/production/vr_mais_token"; do
   if [[ ! -f "$runtime_secret" ]]; then
     echo "Required runtime secret is missing: $runtime_secret" >&2
     exit 1

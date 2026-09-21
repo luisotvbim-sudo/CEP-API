@@ -73,6 +73,12 @@ services:
   api:
     <<: *api
     restart: unless-stopped
+    environment:
+      <<: *api-env
+      WorkforceIntegrations__Monday__Enabled: ${MONDAY_ENABLED:-false}
+      WorkforceIntegrations__Monday__BoardId: ${MONDAY_BOARD_ID:-9920862624}
+      WorkforceIntegrations__Monday__ApiVersion: ${MONDAY_API_VERSION:-2026-07}
+      WorkforceIntegrations__VrMais__Enabled: ${VR_MAIS_ENABLED:-false}
     secrets:
       - source: runtime_connection
         target: ConnectionStrings__Postgres
@@ -84,6 +90,10 @@ services:
         target: Email__Username
       - source: smtp_password
         target: Email__Password
+      - source: monday_token
+        target: WorkforceIntegrations__Monday__Token
+      - source: vr_mais_token
+        target: WorkforceIntegrations__VrMais__Token
     networks: [frontend, database]
     mem_limit: 2g
     pids_limit: 256
@@ -136,5 +146,7 @@ secrets:
   security_code_hmac: {file: '${SECRETS_DIR:-./.local/production}/security-code-hmac'}
   smtp_username: {file: '${SECRETS_DIR:-./.local/production}/smtp_username'}
   smtp_password: {file: '${SECRETS_DIR:-./.local/production}/smtp_password'}
+  monday_token: {file: '${SECRETS_DIR:-./.local/production}/monday_token'}
+  vr_mais_token: {file: '${SECRETS_DIR:-./.local/production}/vr_mais_token'}
   origin_certificate: {file: '${SECRETS_DIR:-./.local/production}/origin-certificate.pem'}
   origin_private_key: {file: '${SECRETS_DIR:-./.local/production}/origin-private.key'}
