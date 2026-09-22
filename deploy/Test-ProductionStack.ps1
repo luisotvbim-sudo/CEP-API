@@ -45,7 +45,7 @@ $listener.Stop()
 $relativeSecrets = "./.local/$projectName"
 Write-TestSecret 'test.env' @"
 API_DOMAIN=localhost
-FRONTEND_DOMAIN=app.cep.lat
+FRONTEND_DOMAIN=cep.lat
 API_IMAGE_TAG=$ImageTag
 JWT_KEY_ID=smoke-$testId
 SMTP_HOST=smtp.invalid
@@ -92,10 +92,10 @@ try {
     $headers = @{ Authorization = "Bearer $($tokens.accessToken)" }
     $me = Invoke-RestMethod "$baseUrl/api/v1/me" -Headers $headers -SkipCertificateCheck
     if ($me.email -ne 'smoke@example.test') { throw 'Authentication failed.' }
-    $frontHeaders = @{ Host = 'app.cep.lat' }
+    $frontHeaders = @{ Host = 'cep.lat' }
     $front = Invoke-WebRequest "$baseUrl/" -Headers $frontHeaders -SkipCertificateCheck
     if ($front.StatusCode -ne 200) { throw 'Front virtual host failed.' }
-    $frontApiHeaders = @{ Host = 'app.cep.lat'; Authorization = "Bearer $($tokens.accessToken)" }
+    $frontApiHeaders = @{ Host = 'cep.lat'; Authorization = "Bearer $($tokens.accessToken)" }
     $frontMe = Invoke-RestMethod "$baseUrl/api/v1/me" -Headers $frontApiHeaders -SkipCertificateCheck
     if ($frontMe.email -ne $me.email) { throw 'Same-origin front API proxy failed.' }
     $jwksBefore = Invoke-RestMethod "$baseUrl/.well-known/jwks.json" -SkipCertificateCheck
