@@ -34,6 +34,8 @@ try {
     $certificate = $request.CreateSelfSigned([DateTimeOffset]::UtcNow.AddMinutes(-1), [DateTimeOffset]::UtcNow.AddDays(1))
     Write-TestSecret 'origin-certificate.pem' $certificate.ExportCertificatePem()
     Write-TestSecret 'origin-private.key' $tlsRsa.ExportRSAPrivateKeyPem()
+    Write-TestSecret 'frontend-origin-certificate.pem' $certificate.ExportCertificatePem()
+    Write-TestSecret 'frontend-origin-private.key' $tlsRsa.ExportRSAPrivateKeyPem()
     $certificate.Dispose()
 } finally { $tlsRsa.Dispose() }
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
@@ -43,6 +45,7 @@ $listener.Stop()
 $relativeSecrets = "./.local/$projectName"
 Write-TestSecret 'test.env' @"
 API_DOMAIN=localhost
+FRONTEND_DOMAIN=app.cep.lat
 API_IMAGE_TAG=$ImageTag
 JWT_KEY_ID=smoke-$testId
 SMTP_HOST=smtp.invalid
@@ -52,6 +55,12 @@ SECRETS_DIR=$relativeSecrets
 "@
 Write-TestSecret 'override.yaml' @"
 services:
+  front:
+    image: nginx:stable-alpine
+    command: ["sh", "-c", "printf 'server { listen 8080; location / { return 200 front-smoke-ok; } }\\n' > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"]
+    networks:
+      frontend:
+        aliases: [cep-front]
   nginx:
     ports: !override ["127.0.0.1:${httpsPort}:443"]
   migrate:
@@ -74,7 +83,7 @@ try {
     Invoke-TestCompose run --rm --no-deps migrate migrate
     Invoke-TestCompose exec -T postgres psql -U postgres -d cep_api -v ON_ERROR_STOP=1 -c "INSERT INTO allowed_email_domains (domain) VALUES ('example.test');"
     Invoke-TestCompose run --rm --no-deps migrate bootstrap-admin
-    Invoke-TestCompose up -d --no-build --wait --wait-timeout 90 api nginx
+    Invoke-TestCompose up -d --no-build --wait --wait-timeout 90 api front nginx
     $baseUrl = "https://localhost:$httpsPort"
     $health = Invoke-WebRequest "$baseUrl/health/ready" -SkipCertificateCheck
     if ($health.StatusCode -ne 200) { throw 'Readiness failed.' }
@@ -83,6 +92,12 @@ try {
     $headers = @{ Authorization = "Bearer $($tokens.accessToken)" }
     $me = Invoke-RestMethod "$baseUrl/api/v1/me" -Headers $headers -SkipCertificateCheck
     if ($me.email -ne 'smoke@example.test') { throw 'Authentication failed.' }
+    $frontHeaders = @{ Host = 'app.cep.lat' }
+    $front = Invoke-WebRequest "$baseUrl/" -Headers $frontHeaders -SkipCertificateCheck
+    if ($front.StatusCode -ne 200) { throw 'Front virtual host failed.' }
+    $frontApiHeaders = @{ Host = 'app.cep.lat'; Authorization = "Bearer $($tokens.accessToken)" }
+    $frontMe = Invoke-RestMethod "$baseUrl/api/v1/me" -Headers $frontApiHeaders -SkipCertificateCheck
+    if ($frontMe.email -ne $me.email) { throw 'Same-origin front API proxy failed.' }
     $jwksBefore = Invoke-RestMethod "$baseUrl/.well-known/jwks.json" -SkipCertificateCheck
     Invoke-TestCompose restart api
     # Wait using the same Docker healthcheck used in production.
@@ -96,13 +111,13 @@ try {
     Invoke-WebRequest "$baseUrl/api/v1/auth/logout" -Method Post -ContentType application/json -Body $logout -SkipCertificateCheck | Out-Null
     $revoked = Invoke-WebRequest "$baseUrl/api/v1/me" -Headers $headers -SkipCertificateCheck -SkipHttpErrorCheck
     if ($revoked.StatusCode -ne 401) { throw 'Bearer remained valid after logout.' }
-    Write-Output 'PASS: PostgreSQL roles/migrations, non-root API, Nginx HTTPS, login, durable signing key after restart, Swagger disabled, logout revocation.'
+    Write-Output 'PASS: PostgreSQL roles/migrations, non-root API, API/front HTTPS hosts, same-origin front proxy, login, durable signing key after restart, Swagger disabled, logout revocation.'
 } finally {
     # Only removes resources in this randomly named test project, including its disposable volumes.
     & docker @composeArgs down --volumes --remove-orphans
     # Remove only the secret files created by this test; never recursively delete a computed path.
     foreach ($name in @('postgres_password','owner_password','runtime_password','runtime_connection','migration_connection',
-        'bootstrap_email','bootstrap_password','smtp_username','smtp_password','monday_token','vr_mais_token','security-code-hmac','jwt-private.pem','origin-certificate.pem','origin-private.key')) {
+        'bootstrap_email','bootstrap_password','smtp_username','smtp_password','monday_token','vr_mais_token','security-code-hmac','jwt-private.pem','origin-certificate.pem','origin-private.key','frontend-origin-certificate.pem','frontend-origin-private.key')) {
         Remove-Item -LiteralPath (Join-Path $testPath $name) -ErrorAction SilentlyContinue
     }
 }

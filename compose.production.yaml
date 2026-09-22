@@ -22,7 +22,7 @@ x-api: &api
     Email__Port: ${SMTP_PORT:-587}
     Email__UseSsl: ${SMTP_USE_SSL:-false}
     Email__FromAddress: ${SMTP_FROM:?Set sender address}
-    AllowedHosts: ${API_DOMAIN:?Set API domain};localhost
+    AllowedHosts: ${API_DOMAIN:?Set API domain};${FRONTEND_DOMAIN:-app.cep.lat};localhost
     ReverseProxy__KnownProxies__0: 172.30.10.2
   volumes:
     - protection_keys:/var/lib/cep-api/keys
@@ -111,8 +111,9 @@ services:
     restart: unless-stopped
     environment:
       API_DOMAIN: ${API_DOMAIN:?Set API domain}
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-app.cep.lat}
     ports: ["443:443"]
-    secrets: [origin_certificate, origin_private_key]
+    secrets: [origin_certificate, origin_private_key, frontend_origin_certificate, frontend_origin_private_key]
     volumes:
       - ./deploy/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./deploy/cloudflare-realip.conf:/etc/nginx/cloudflare-realip.conf:ro
@@ -150,3 +151,5 @@ secrets:
   vr_mais_token: {file: '${SECRETS_DIR:-./.local/production}/vr_mais_token'}
   origin_certificate: {file: '${SECRETS_DIR:-./.local/production}/origin-certificate.pem'}
   origin_private_key: {file: '${SECRETS_DIR:-./.local/production}/origin-private.key'}
+  frontend_origin_certificate: {file: '${SECRETS_DIR:-./.local/production}/frontend-origin-certificate.pem'}
+  frontend_origin_private_key: {file: '${SECRETS_DIR:-./.local/production}/frontend-origin-private.key'}
