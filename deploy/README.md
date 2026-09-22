@@ -4,6 +4,8 @@ Para atualização diária às 02h (São Paulo), veja [o agendador da VM](nightl
 
 Use `compose.production.yaml` sozinho, sem combiná-lo com `compose.yaml`. Ele cria Nginx, API, PostgreSQL e uma tarefa de migração. Somente 443 é publicada. O banco não possui porta no host; a API executa como UID 1654, com filesystem somente leitura e volume separado para Data Protection.
 
+O mesmo Nginx de borda atende `api.cep.lat` e `app.cep.lat`. O segundo host entrega o contêiner independente `cep-front` e encaminha somente `/api/` diretamente à API, preservando a mesma origem para o navegador sem habilitar CORS. O front pertence ao repositório e ao Compose `CEP-FRONT`; ambos compartilham apenas a rede Docker de borda. A resolução dinâmica permite que a API e o Nginx iniciem mesmo quando o front estiver temporariamente ausente.
+
 ## Segredos e persistência
 
 Copie `deploy/production.env.example` para `.env`, ajustando domínio, SMTP e identificador da chave. `.env` não deve ser versionado. Crie `.local/production` fora de qualquer pasta compartilhada; no Linux, deixe o diretório acessível somente ao administrador (`chmod 700`). Não use os segredos descartáveis do script de teste em produção.
@@ -23,6 +25,7 @@ Arquivos esperados:
 | `vr_mais_token` | Token da API do Ponto VR Mais com o menor conjunto de permissões necessário |
 | `security-code-hmac` | Chave aleatória Base64 de pelo menos 32 bytes para proteger códigos curtos no banco |
 | `origin-certificate.pem`, `origin-private.key` | Certificado HTTPS e chave para o domínio da API |
+| `frontend-origin-certificate.pem`, `frontend-origin-private.key` | Certificado Origin CA e chave separados para `app.cep.lat` |
 
 As senhas nas conexões precisam coincidir com seus respectivos arquivos. Gere senhas sem caracteres especiais de connection string, por exemplo 32 bytes aleatórios em hexadecimal. Não as escreva no histórico de comandos. Os arquivos são montados somente nos serviços que precisam deles.
 
@@ -42,7 +45,7 @@ Nginx usa `172.30.10.2`; a faixa dinâmica começa em `172.30.10.8`, evitando co
 
 O Nginx só interpreta `CF-Connecting-IP` quando a conexão vem de uma faixa oficial da Cloudflare; em seguida sobrescreve os cabeçalhos encaminhados à API. Revise `cloudflare-realip.conf` contra as listas [IPv4](https://www.cloudflare.com/ips-v4) e [IPv6](https://www.cloudflare.com/ips-v6) antes da implantação.
 
-Na Cloudflare, configure SSL/TLS Full (strict), redirecionamento externo para HTTPS e ausência de cache/challenge interativo nas rotas da API. Um certificado Origin CA serve entre Cloudflare e Nginx; clientes acessam o domínio proxied. Na OCI/firewall, mantenha PostgreSQL fechado e restrinja SSH. Se depender das proteções da Cloudflare, restrinja a porta de origem às faixas dela após os testes administrativos.
+Na Cloudflare, configure SSL/TLS Full (strict), redirecionamento externo para HTTPS e ausência de cache/challenge interativo nas rotas da API. Use certificados Origin CA separados para `api.cep.lat` e `app.cep.lat`, permitindo rotacionar ou remover o front sem trocar a chave da API. Clientes acessam os domínios proxied. Na OCI/firewall, mantenha PostgreSQL fechado e restrinja SSH. Se depender das proteções da Cloudflare, restrinja a porta de origem às faixas dela após os testes administrativos.
 
 ## Primeira inicialização e atualizações
 
