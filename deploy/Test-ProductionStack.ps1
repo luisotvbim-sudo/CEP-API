@@ -92,6 +92,11 @@ try {
     $headers = @{ Authorization = "Bearer $($tokens.accessToken)" }
     $me = Invoke-RestMethod "$baseUrl/api/v1/me" -Headers $headers -SkipCertificateCheck
     if ($me.email -ne 'smoke@example.test') { throw 'Authentication failed.' }
+    $webHeaders = @{ Host = "cep.lat:$httpsPort"; Origin = "https://cep.lat:$httpsPort"; 'X-CEP-Web-Session' = '1'; 'Sec-Fetch-Site' = 'same-origin' }
+    $webTokens = Invoke-RestMethod "$baseUrl/api/v1/auth/web/login" -Method Post -ContentType application/json -Body $login -Headers $webHeaders -SessionVariable webSession -SkipCertificateCheck
+    if ($webTokens.PSObject.Properties.Name -contains 'refreshToken') { throw 'Browser response exposed refresh token.' }
+    $webCookie = @($webSession.Cookies.GetCookies([Uri]$baseUrl) | Where-Object Name -eq '__Host-cep-session')
+    if ($webCookie.Count -ne 1 -or !$webCookie[0].HttpOnly -or !$webCookie[0].Secure) { throw 'Secure browser cookie missing.' }
     $frontHeaders = @{ Host = 'cep.lat' }
     $front = Invoke-WebRequest "$baseUrl/" -Headers $frontHeaders -SkipCertificateCheck
     if ($front.StatusCode -ne 200) { throw 'Front virtual host failed.' }
@@ -105,13 +110,19 @@ try {
     $meAfter = Invoke-RestMethod "$baseUrl/api/v1/me" -Headers $headers -SkipCertificateCheck
     $jwksAfter = Invoke-RestMethod "$baseUrl/.well-known/jwks.json" -SkipCertificateCheck
     if ($meAfter.email -ne $me.email -or $jwksBefore.keys[0].n -ne $jwksAfter.keys[0].n) { throw 'Identity or signing key changed on restart.' }
+    $webRestored = Invoke-RestMethod "$baseUrl/api/v1/auth/web/refresh" -Method Post -ContentType application/json -Body '{}' -Headers $webHeaders -WebSession $webSession -SkipCertificateCheck
+    if ($webRestored.user.email -ne $me.email -or ([DateTimeOffset]$webRestored.sessionExpiresAt - [DateTimeOffset]$webTokens.sessionExpiresAt).Duration().TotalMilliseconds -gt 1) { throw 'Browser session failed to survive restart or extended its deadline.' }
+    Invoke-WebRequest "$baseUrl/api/v1/auth/web/logout" -Method Post -ContentType application/json -Body '{}' -Headers $webHeaders -WebSession $webSession -SkipCertificateCheck | Out-Null
+    $webRevoked = Invoke-WebRequest "$baseUrl/api/v1/me" -Headers @{ Authorization = "Bearer $($webRestored.accessToken)" } -SkipCertificateCheck -SkipHttpErrorCheck
+    if ($webRevoked.StatusCode -ne 401) { throw 'Browser bearer remained valid after logout.' }
     $swagger = Invoke-WebRequest "$baseUrl/swagger/v1/swagger.json" -SkipCertificateCheck -SkipHttpErrorCheck
     if ($swagger.StatusCode -ne 404) { throw 'Swagger must be disabled in Production.' }
     $logout = @{ refreshToken = $tokens.refreshToken } | ConvertTo-Json
     Invoke-WebRequest "$baseUrl/api/v1/auth/logout" -Method Post -ContentType application/json -Body $logout -SkipCertificateCheck | Out-Null
     $revoked = Invoke-WebRequest "$baseUrl/api/v1/me" -Headers $headers -SkipCertificateCheck -SkipHttpErrorCheck
     if ($revoked.StatusCode -ne 401) { throw 'Bearer remained valid after logout.' }
-    Write-Output 'PASS: PostgreSQL roles/migrations, non-root API, API/front HTTPS hosts, same-origin front proxy, login, durable signing key after restart, Swagger disabled, logout revocation.'
+    Write-Output 'PASS: PostgreSQL roles/migrations, non-root API, Nginx HTTPS, native/browser login, durable keys/session after restart, fixed browser deadline, Swagger disabled, logout revocation.'
+
 } finally {
     # Only removes resources in this randomly named test project, including its disposable volumes.
     & docker @composeArgs down --volumes --remove-orphans

@@ -25,13 +25,70 @@ public sealed class AuthController(
     IRegistrationEmailPolicy registrationEmailPolicy,
     IClock clock,
     IAuditService audit,
-    IOptions<JwtOptions> jwtOptions) : ApiControllerBase
+    IOptions<JwtOptions> jwtOptions,
+    WebSessionCookie webCookie) : ApiControllerBase
 {
     private static readonly TimeSpan MinimumRecoveryResponseTime = TimeSpan.FromMilliseconds(250);
+
+    private ObjectResult? ValidateWebRequest()
+    {
+        Response.Headers.CacheControl = "no-store";
+        return webCookie.IsAllowed(Request) ? null :
+            ApiProblem(StatusCodes.Status403Forbidden, "Same-origin browser request required.", "web_origin_invalid");
+    }
+
+    private ActionResult<WebSessionResponse> WebResult(ActionResult<TokenResponse> result)
+    {
+        if (result.Result is OkObjectResult { Value: TokenResponse tokens })
+        {
+            webCookie.Write(HttpContext, tokens);
+            return Ok(new WebSessionResponse(tokens.AccessToken, tokens.AccessTokenExpiresAt, tokens.RefreshTokenExpiresAt, tokens.User));
+        }
+        return result.Result!;
+    }
+
+    [HttpPost("web/login")]
+    [EnableRateLimiting("login")]
+    public async Task<ActionResult<WebSessionResponse>> WebLogin(LoginRequest request, CancellationToken cancellationToken)
+    {
+        if (ValidateWebRequest() is { } error) return error;
+        return WebResult(await LoginCore(request, true, cancellationToken));
+    }
+
+    [HttpPost("web/refresh")]
+    [EnableRateLimiting("auth")]
+    public async Task<ActionResult<WebSessionResponse>> WebRefresh(CancellationToken cancellationToken)
+    {
+        if (ValidateWebRequest() is { } error) return error;
+        var cookie = webCookie.Read(Request);
+        if (cookie is null)
+        {
+            webCookie.Clear(HttpContext);
+            return ApiProblem(StatusCodes.Status401Unauthorized, "Browser session expired.", "session_expired");
+        }
+        var result = await Refresh(new RefreshRequest(cookie.RefreshToken), cancellationToken);
+        if (result.Result is not OkObjectResult) webCookie.Clear(HttpContext);
+        return WebResult(result);
+    }
+
+    [HttpPost("web/logout")]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> WebLogout(CancellationToken cancellationToken)
+    {
+        if (ValidateWebRequest() is { } error) return error;
+        if (webCookie.Read(Request, allowExpired: true) is { } cookie)
+            await Logout(new LogoutRequest(cookie.RefreshToken), cancellationToken);
+        webCookie.Clear(HttpContext);
+        return NoContent();
+    }
 
     [HttpPost("login")]
     [EnableRateLimiting("login")]
     public async Task<ActionResult<TokenResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
+        => await LoginCore(request, false, cancellationToken);
+
+    private async Task<ActionResult<TokenResponse>> LoginCore(LoginRequest request, bool web, CancellationToken cancellationToken)
     {
         var normalizedEmail = userManager.NormalizeEmail(request.Email);
         var userId = await db.Users.AsNoTracking().Where(x => x.NormalizedEmail == normalizedEmail)
@@ -57,7 +114,7 @@ public sealed class AuthController(
             return ApiProblem(StatusCodes.Status401Unauthorized, "Authentication failed.", "invalid_credentials");
         }
 
-        var response = await CreateSessionAsync(user, request.Client, cancellationToken);
+        var response = await CreateSessionAsync(user, request.Client, cancellationToken, web);
         await audit.WriteAsync("auth.login_succeeded", user.OrganizationId, user.Id, user.Id,
             new { client = request.Client?.Type ?? "unknown" }, IpAddress, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -120,7 +177,7 @@ public sealed class AuthController(
             InstallationId = session.InstallationId,
             IpAddress = IpAddress,
             CreatedAt = now,
-            ExpiresAt = now.AddDays(jwtOptions.Value.RefreshTokenDays)
+            ExpiresAt = session.ClientType == "cep-horas-browser" ? session.ExpiresAt : now.AddDays(jwtOptions.Value.RefreshTokenDays)
         };
         session.LastUsedAt = now;
         session.RevokedAt = now;
@@ -333,7 +390,7 @@ public sealed class AuthController(
         return NoContent();
     }
 
-    private async Task<TokenResponse> CreateSessionAsync(ApplicationUser user, ClientInfo? client, CancellationToken cancellationToken)
+    private async Task<TokenResponse> CreateSessionAsync(ApplicationUser user, ClientInfo? client, CancellationToken cancellationToken, bool web = false)
     {
         var now = clock.UtcNow;
         var refreshToken = tokenService.CreateRefreshToken();
@@ -341,12 +398,12 @@ public sealed class AuthController(
         {
             UserId = user.Id,
             TokenHash = tokenService.HashRefreshToken(refreshToken),
-            ClientType = Truncate(client?.Type ?? "unknown", 50)!,
+            ClientType = web ? "cep-horas-browser" : Truncate(client?.Type ?? "unknown", 50)!,
             ClientVersion = Truncate(client?.Version, 50),
             InstallationId = Truncate(client?.InstallationId, 200),
             IpAddress = IpAddress,
             CreatedAt = now,
-            ExpiresAt = now.AddDays(jwtOptions.Value.RefreshTokenDays)
+            ExpiresAt = now.AddDays(web ? Math.Min(7, jwtOptions.Value.RefreshTokenDays) : jwtOptions.Value.RefreshTokenDays)
         };
         db.RefreshSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);

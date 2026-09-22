@@ -8,7 +8,8 @@ namespace CepApi.Api.Controllers;
 public abstract class ApiControllerBase : ControllerBase
 {
     protected Guid CurrentUserId => Guid.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue("sub")!);
-    protected Guid? CurrentOrganizationId => Guid.TryParse(User.FindFirstValue("org_id"), out var id) ? id : null;
+    protected Guid? CurrentOrganizationId => HttpContext.Items[OrganizationScopeAttribute.ItemKey] is Guid selected
+        ? selected : Guid.TryParse(User.FindFirstValue("org_id"), out var id) ? id : null;
     protected string? IpAddress => HttpContext.Connection.RemoteIpAddress?.ToString();
 
     protected ObjectResult ApiProblem(int status, string title, string code, string? detail = null)

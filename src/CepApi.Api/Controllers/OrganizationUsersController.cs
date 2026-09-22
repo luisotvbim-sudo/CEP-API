@@ -10,7 +10,8 @@ using Microsoft.EntityFrameworkCore;
 namespace CepApi.Api.Controllers;
 
 [Route("api/v1/organization")]
-[Authorize(Roles = nameof(UserRole.OrganizationAdmin))]
+[Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)}")]
+[OrganizationScope]
 public sealed class OrganizationUsersController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,

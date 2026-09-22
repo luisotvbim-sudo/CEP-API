@@ -26,6 +26,7 @@ builder.Logging.AddJsonConsole();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
+builder.Services.AddScoped<WebSessionCookie>();
 builder.Services.AddControllers().AddJsonOptions(options =>
     options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 builder.Services.Configure<ApiBehaviorOptions>(options =>
@@ -46,6 +47,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo { Title = "CEP API", Version = "v1" });
+    options.OperationFilter<OrganizationScopeOperationFilter>();
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",

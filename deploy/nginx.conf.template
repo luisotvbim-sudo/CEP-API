@@ -12,7 +12,7 @@ server {
 
     location / {
         proxy_pass http://api:8080;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         # Overwrite client-supplied forwarding headers with the trusted hop's values.
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -43,7 +43,7 @@ server {
     # container and is also independently available at api.cep.lat.
     location /api/ {
         proxy_pass http://api:8080;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_connect_timeout 5s;
@@ -59,7 +59,7 @@ server {
         resolver 127.0.0.11 ipv6=off valid=10s;
         set $frontend_upstream http://cep-front:8080;
         proxy_pass $frontend_upstream;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_connect_timeout 5s;

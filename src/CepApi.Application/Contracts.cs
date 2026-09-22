@@ -8,6 +8,7 @@ public sealed record LoginRequest([Required, EmailAddress, MaxLength(320)] strin
 public sealed record RefreshRequest([Required, MaxLength(1000)] string RefreshToken);
 public sealed record LogoutRequest([Required, MaxLength(1000)] string RefreshToken);
 public sealed record TokenResponse(string AccessToken, DateTimeOffset AccessTokenExpiresAt, string RefreshToken, DateTimeOffset RefreshTokenExpiresAt, UserResponse User);
+public sealed record WebSessionResponse(string AccessToken, DateTimeOffset AccessTokenExpiresAt, DateTimeOffset SessionExpiresAt, UserResponse User);
 public sealed record AcceptInvitationRequest(
     [Required, EmailAddress, MaxLength(320)] string Email,
     [Required, MaxLength(50)] string Code,

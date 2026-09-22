@@ -11,7 +11,8 @@ public sealed record AuditEventResponse(Guid Id, Guid? OrganizationId, Guid? Act
     string Action, JsonElement? Details, string? IpAddress, DateTimeOffset CreatedAt);
 
 [Route("api/v1/organization/audit")]
-[Authorize(Roles = nameof(UserRole.OrganizationAdmin))]
+[Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)}")]
+[OrganizationScope]
 public sealed class AuditController(AppDbContext db) : ApiControllerBase
 {
     [HttpGet]
