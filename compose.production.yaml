@@ -22,7 +22,7 @@ x-api: &api
     Email__Port: ${SMTP_PORT:-587}
     Email__UseSsl: ${SMTP_USE_SSL:-false}
     Email__FromAddress: ${SMTP_FROM:?Set sender address}
-    AllowedHosts: ${API_DOMAIN:?Set API domain};${FRONTEND_DOMAIN:-app.cep.lat};localhost
+    AllowedHosts: ${API_DOMAIN:?Set API domain};${FRONTEND_DOMAIN:-cep.lat};localhost
     ReverseProxy__KnownProxies__0: 172.30.10.2
   volumes:
     - protection_keys:/var/lib/cep-api/keys
@@ -111,7 +111,7 @@ services:
     restart: unless-stopped
     environment:
       API_DOMAIN: ${API_DOMAIN:?Set API domain}
-      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-app.cep.lat}
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-cep.lat}
     ports: ["443:443"]
     secrets: [origin_certificate, origin_private_key, frontend_origin_certificate, frontend_origin_private_key]
     volumes:
