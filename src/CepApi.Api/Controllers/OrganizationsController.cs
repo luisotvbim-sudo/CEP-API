@@ -163,15 +163,8 @@ public sealed partial class OrganizationsController(
         var query = db.Users.AsNoTracking().Include(x => x.ProductAccesses).Where(x => x.OrganizationId == organizationId);
         var total = await query.LongCountAsync(cancellationToken);
         var users = await query.OrderBy(x => x.DisplayName).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
-        return Ok(new PagedResponse<UserResponse>(users.Select(ToUserResponse).ToArray(), page, pageSize, total));
+        return Ok(new PagedResponse<UserResponse>(users.Select(x => x.ToUserResponse()).ToArray(), page, pageSize, total));
     }
-
-    private static (int Page, int PageSize) NormalizePage(int page, int pageSize)
-        => (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
-
-    private static UserResponse ToUserResponse(ApplicationUser user)
-        => new(user.Id, user.DisplayName, user.Email!, user.OrganizationId, user.Role, user.Status,
-            user.ProductAccesses.Select(x => x.Product).Order().ToArray());
 
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.CultureInvariant)]
     private static partial Regex SlugPattern();

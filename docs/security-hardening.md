@@ -7,6 +7,7 @@ Base auditada: `e614a15caf93e86a601f6e5efd40eb93fa23f763`.
 - Recuperação invalida códigos antigos na emissão e todos os pendentes após sucesso; consumo e tentativas são serializados por conta no PostgreSQL, na mesma transação da senha e revogação.
 - Access tokens incluem identificação da família da sessão e versão de segurança. Logout/revogação bloqueiam a família; recuperação/troca de senha bloqueiam todas as sessões. Rotacionar normalmente não invalida um access token ainda vigente.
 - Refresh simultâneo possui somente um vencedor. Reutilização posterior revoga a família. Clientes precisam serializar refresh e tratar resposta perdida com novo login.
+- A sessão web mantém o refresh token somente em cookie protegido por Data Protection, `HttpOnly`, `Secure`, `SameSite=Strict` e prefixo `__Host-`; login, rotação e logout exigem marcador de requisição de mesma origem.
 - Alterações de permissões e do último administrador são protegidas por transação/bloqueio. Consumo de convites também bloqueia os registros durante a verificação.
 - A fila de e-mail guarda conteúdo protegido com Data Protection na mesma gravação do convite, faz retentativas e remove mensagens entregues/expiradas. SMTP exige TLS em produção.
 - Cabeçalhos de IP/HTTPS só são aceitos de proxy confiável. O limite anônimo é separado por IP e rota normalizada, com padrão configurável de 60/minuto; operações sensíveis autenticadas têm limite por conta.

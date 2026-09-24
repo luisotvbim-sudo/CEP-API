@@ -140,6 +140,7 @@ public interface IWorkforceDirectorySyncService
         Guid organizationId,
         Guid requestedByUserId,
         bool fullRefresh,
+        IReadOnlyCollection<Guid>? visibleUserIds,
         CancellationToken cancellationToken);
 }
 

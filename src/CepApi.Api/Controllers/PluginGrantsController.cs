@@ -1,4 +1,5 @@
 using CepApi.Application;
+using CepApi.Api.Authorization;
 using CepApi.Domain;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -10,12 +11,21 @@ namespace CepApi.Api.Controllers;
 
 [Route("api/v1/plugin/grants")]
 [Authorize(Roles = $"{nameof(UserRole.OrganizationAdmin)},{nameof(UserRole.User)}")]
-public sealed class PluginGrantsController(AppDbContext db, ITokenService tokenService, IClock clock, IAuditService audit) : ApiControllerBase
+public sealed class PluginGrantsController(
+    AppDbContext db,
+    ITokenService tokenService,
+    IClock clock,
+    IAuditService audit,
+    OrganizationScopeService organizationScope) : ApiControllerBase
 {
     [HttpPost]
     [EnableRateLimiting("account")]
-    public async Task<ActionResult<PluginGrantResponse>> Create(CreatePluginGrantRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<PluginGrantResponse>> Create(
+        CreatePluginGrantRequest request,
+        [FromQuery] Guid? organizationId,
+        CancellationToken cancellationToken)
     {
+        _ = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
         if (string.IsNullOrWhiteSpace(request.PluginVersion) || string.IsNullOrWhiteSpace(request.InstallationId))
             return ApiProblem(StatusCodes.Status400BadRequest, "Plugin version and installation id are required.", "invalid_plugin_client");
 

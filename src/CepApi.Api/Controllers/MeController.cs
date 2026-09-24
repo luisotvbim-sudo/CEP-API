@@ -18,7 +18,7 @@ public sealed class MeController(AppDbContext db, UserManager<ApplicationUser> u
     {
         var user = await db.Users.AsNoTracking().Include(x => x.ProductAccesses)
             .SingleAsync(x => x.Id == CurrentUserId, cancellationToken);
-        return Ok(ToResponse(user));
+        return Ok(user.ToUserResponse());
     }
 
     [HttpPatch]
@@ -34,7 +34,7 @@ public sealed class MeController(AppDbContext db, UserManager<ApplicationUser> u
         await db.SaveChangesAsync(cancellationToken);
         await audit.WriteAsync("user.profile_updated", user.OrganizationId, user.Id, user.Id,
             ipAddress: IpAddress, cancellationToken: cancellationToken);
-        return Ok(ToResponse(user));
+        return Ok(user.ToUserResponse());
     }
 
     [HttpPut("password")]
@@ -92,7 +92,4 @@ public sealed class MeController(AppDbContext db, UserManager<ApplicationUser> u
         return NoContent();
     }
 
-    private static UserResponse ToResponse(ApplicationUser user)
-        => new(user.Id, user.DisplayName, user.Email!, user.OrganizationId, user.Role, user.Status,
-            user.ProductAccesses.Select(x => x.Product).Order().ToArray());
 }

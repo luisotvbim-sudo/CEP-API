@@ -17,7 +17,7 @@ public sealed class ProxySecurityTests(SecurityFixture fixture) : IClassFixture<
     {
         await using var factory = Configure(remoteIp);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-            { BaseAddress = new Uri("http://localhost"), AllowAutoRedirect = false });
+        { BaseAddress = new Uri("http://localhost"), AllowAutoRedirect = false });
         client.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.10");
         client.DefaultRequestHeaders.Add("X-Forwarded-Proto", "https");
         var response = await client.PostAsJsonAsync("/api/v1/auth/refresh", new RefreshRequest("invalid"), TestContext.Current.CancellationToken);

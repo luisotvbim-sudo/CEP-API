@@ -58,7 +58,7 @@ Content-Type: application/json
   "vrMaisIdentityId": "01999999-9999-7999-8999-999999999998"
 }
 
-### Administrative history (maximum 60 days)
+### Workforce history (maximum 90 days)
 GET {{baseUrl}}/api/v1/organization/time-control/history?from=2026-09-01&to=2026-09-20
 Authorization: Bearer {{accessToken}}
 

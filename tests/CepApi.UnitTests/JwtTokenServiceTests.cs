@@ -37,10 +37,15 @@ public sealed class JwtTokenServiceTests
         var handler = new JwtSecurityTokenHandler();
         var validation = new TokenValidationParameters
         {
-            ValidateIssuerSigningKey = true, IssuerSigningKeys = keys.ValidationKeys,
-            ValidateIssuer = true, ValidIssuer = "test-issuer", ValidateAudience = true,
-            ValidAudience = "test-plugin", ValidateLifetime = false,
-            ValidAlgorithms = [SecurityAlgorithms.RsaSha256], ValidTypes = ["plugin-grant+jwt"]
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKeys = keys.ValidationKeys,
+            ValidateIssuer = true,
+            ValidIssuer = "test-issuer",
+            ValidateAudience = true,
+            ValidAudience = "test-plugin",
+            ValidateLifetime = false,
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+            ValidTypes = ["plugin-grant+jwt"]
         };
         handler.ValidateToken(grant.Token, validation, out _);
         var parts = grant.Token.Split('.');
