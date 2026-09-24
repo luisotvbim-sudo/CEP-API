@@ -34,3 +34,21 @@ public sealed record TeamAssignmentResponse(
     DateOnly EffectiveFrom,
     DateOnly? EffectiveTo,
     DateTimeOffset CreatedAt);
+
+public sealed record CreateAutomaticNotificationScheduleRequest(
+    TimeOnly LocalTime,
+    [MaxLength(100)] string? TimeZoneId = null,
+    bool IsEnabled = true);
+
+public sealed record UpdateAutomaticNotificationScheduleRequest(
+    TimeOnly? LocalTime,
+    [MaxLength(100)] string? TimeZoneId,
+    bool? IsEnabled);
+
+public sealed record AutomaticNotificationScheduleResponse(
+    Guid Id,
+    TimeOnly LocalTime,
+    string TimeZoneId,
+    bool IsEnabled,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);

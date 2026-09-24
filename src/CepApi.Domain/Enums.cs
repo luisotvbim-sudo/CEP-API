@@ -7,3 +7,4 @@ public enum Product { Revit, Zwcad }
 public enum TeamAssignmentRole { Member, Manager }
 public enum ExternalWorkforceSource { Monday, VrMais }
 public enum WorkforceSyncStatus { Running, Succeeded, PartiallySucceeded, Failed }
+public enum AutomaticNotificationExecutionStatus { Running, Succeeded, Failed }

@@ -1,6 +1,6 @@
 # Contexto para o front-end — Administração Monday e VR Mais
 
-Atualizado em 23/09/2026.
+Atualizado em 24/09/2026.
 
 Este documento é o handoff para o front-end administrativo do **CEP Horas**. A especificação funcional e o OpenAPI da branch atual prevalecem sobre referências históricas de branch ou commit.
 
@@ -131,6 +131,49 @@ Criar uma área `Administração > Integrações e pessoas`, dividida em quatro 
 2. **Correspondências**
 3. **Pessoas**
 4. **Histórico**
+
+Adicionar também em **Configurações** o cartão “Horários dos avisos automáticos”. Ele configura somente
+quando o processamento futuro poderá ocorrer; ainda não existe envio automático enquanto período e
+tolerância da conciliação não forem confirmados.
+
+Contrato disponível para `organizationAdmin` e `systemAdmin`:
+
+```http
+GET  /api/v1/organization/time-control/notification-schedules
+POST /api/v1/organization/time-control/notification-schedules
+PATCH /api/v1/organization/time-control/notification-schedules/{scheduleId}
+```
+
+Para `systemAdmin`, acrescentar `?organizationId=<uuid>` nas três chamadas. A organização nasce com
+`11:50:00`, fuso `America/Sao_Paulo`, ativo. É permitido criar outros horários; horário e fuso não podem
+ser duplicados dentro da mesma organização. A precisão é de minuto e a desativação é feita por `PATCH`,
+sem excluir o histórico.
+
+```ts
+export type AutomaticNotificationSchedule = {
+  id: string;
+  localTime: string; // "11:50:00"
+  timeZoneId: string; // "America/Sao_Paulo"
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateAutomaticNotificationSchedule = {
+  localTime: string;
+  timeZoneId?: string | null;
+  isEnabled?: boolean;
+};
+
+export type UpdateAutomaticNotificationSchedule = {
+  localTime?: string | null;
+  timeZoneId?: string | null;
+  isEnabled?: boolean | null;
+};
+```
+
+Não apresentar a configuração como prova de que notificações foram enviadas. As notificações concretas,
+destinatários e comparação oficial Monday × VR Mais permanecem condicionados às regras do backend.
 
 Em desktop, usar cabeçalho com título, descrição curta e o estado da última sincronização. Manter o botão principal `Sincronizar agora` visível nas três primeiras abas.
 
