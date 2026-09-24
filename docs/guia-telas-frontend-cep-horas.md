@@ -8,7 +8,7 @@ Este é um **handoff de implementação**, não uma afirmação de que todas as 
 
 O CEP Horas traz apontamentos de atividades do Monday e registros de ponto do VR Mais, liga cada pessoa às duas identidades externas e permite analisar, para o **mesmo período escolhido**, as horas de cada fonte e sua diferença. A estrutura é `Organização → Times → Pessoas`. O Membro vê seus próprios dados; o Líder vê os seus e os das pessoas dos times que lidera; o Coordenador administra e consulta toda a organização.
 
-O lançamento do Monday pertence ao **único responsável do item ou subitem**, mesmo que outra pessoa tenha iniciado ou parado o cronômetro. Não atribuir a hora ao operador do relógio na interface.
+O lançamento do Monday pertence ao **único `PROFISSIONAL` do item ou subitem**; se o subitem não tiver profissional próprio, herda o do pai. A coluna `R.T.` e a pessoa que iniciou ou parou o cronômetro não definem a atribuição das horas.
 
 Convenção de produto para quando o backend entregar conciliação: `diferença = Monday − VR Mais`. Saldo do período é a soma das diferenças diárias **calculáveis** dentro do filtro; divergência acumulada é a soma dos valores absolutos diários, para que `−2h` e `+2h` não desapareçam em um saldo zero. Horas exibidas como diferença **não** são automaticamente horas extras, débito trabalhista, produtividade ou falta. Valor desconhecido é `null`/“Indisponível”, nunca zero implícito.
 
@@ -36,7 +36,7 @@ O front usa React 19, TypeScript, Vite, `src/App.tsx`, `src/admin/*`, `src/auth/
 2. Distinguir a atualização normal de **7 dias** do `full=true` de **90 dias**. O texto “coleta incremental” sozinho é impreciso: a persistência faz upsert, mas a consulta normal reavalia uma janela móvel de sete dias; não há delta puro por alteração desde o último cursor.
 3. Remover de `src/admin/TeamsPage.tsx` a frase que diz que vínculo de Líder ainda não concede acesso operacional. O backend já limita consultas de times, pessoas e histórico pelo vínculo `manager` vigente; faltam as telas operacionais e a conciliação.
 4. `SyncPage` não deve tratar `completeSnapshot=true` como “diretório inteiro atualizado” em tentativa normal, nem `receivedCount=0` como diretório vazio: nessas tentativas o diretório não é consultado. O escopo foi restrito às pessoas selecionadas.
-5. Atualizar mensagens de erro para `sync_scope_empty`, `full_sync_forbidden`, `monday_responsible_column_unavailable` e `monday_multiple_responsibles`; rever o texto de `history_period_too_large` para 90 dias.
+5. Atualizar mensagens de erro para `sync_scope_empty`, `full_sync_forbidden` e `monday_responsible_column_unavailable`; rever o texto de `history_period_too_large` para 90 dias. Sessões Monday com múltiplos profissionais são ignoradas pela API, não geram esse erro.
 6. Sincronizar `docs/openapi-backend-current.json` com a API executando, comparar com `docs/openapi.json`, regenerar `src/auth/api-schema.d.ts` se necessário e adaptar o cliente. A simples existência de Swagger não prova que PostgreSQL ou fontes externas estejam disponíveis.
 
 ## 3. Permissões e escopo: base de toda a navegação
@@ -173,7 +173,7 @@ Evitar criar um item de navegação clicável que leva a uma página vazia. Para
 - `409 sync_scope_empty`: nenhuma identidade ativa associada nas **duas** fontes para o escopo; orientar contato com o coordenador/associação. `full_sync_forbidden`: esconder a ação e tratar 403 se chamada. `sync_not_found` em GET é estado inicial vazio.
 - A atualização normal consulta o VR Mais por IDs/data e o Monday por itens/subitens filtrados pelo Responsável, porém o histórico de sessões dos itens selecionados ainda é lido e filtrado por data localmente. Persistência é idempotente (upsert/correção, sem duplicação); **a consulta externa não é delta puro por mudança desde o último cursor**. Os registros guardados têm retenção de 90 dias; uma atualização de 7 dias não atualiza automaticamente dias antigos.
 - O endpoint mostra a **última tentativa**, não fornece “último sucesso por fonte” como campo dedicado. Não derivar “dados atuais” do horário de uma tentativa falha. `completeSnapshot` de tentativa normal limita-se ao escopo processado, não à organização inteira. `receivedCount=0` pode significar “diretório não consultado”.
-- Se Monday retornar `monday_responsible_column_unavailable` ou `monday_multiple_responsibles`, orientar revisão da configuração/dados na origem. Não transferir horas para quem clicou no cronômetro como solução de interface.
+- Se Monday retornar `monday_responsible_column_unavailable`, orientar revisão da configuração na origem. Sessões com múltiplos profissionais são ignoradas, não transferidas para quem clicou no cronômetro.
 
 ### T08 — Histórico administrativo e auditoria
 

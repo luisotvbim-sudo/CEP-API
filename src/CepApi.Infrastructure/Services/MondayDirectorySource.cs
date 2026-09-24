@@ -19,9 +19,38 @@ public sealed class MondayDirectorySource(
         }
         """;
     private const string DirectoryQuery = """
-        query ($ids: [ID!]!, $page: Int!) {
-          boards(ids: $ids) { id subscribers { id } }
+        query ($page: Int!) {
           users(status: [ACTIVE], limit: 100, page: $page) { id name email }
+        }
+        """;
+    private const string FirstDirectoryItemsQuery = """
+        query ($ids: [ID!]!, $professionalColumn: ID!) {
+          boards(ids: $ids) {
+            id
+            items_page(limit: 500, hierarchy_scope_config: "allItems",
+              query_params: {rules: [{column_id: $professionalColumn, compare_value: [], operator: is_not_empty}]}) {
+              cursor
+              items {
+                column_values(types: [people]) {
+                  id
+                  ... on PeopleValue { persons_and_teams { id kind } }
+                }
+              }
+            }
+          }
+        }
+        """;
+    private const string NextDirectoryItemsQuery = """
+        query ($cursor: String!) {
+          next_items_page(cursor: $cursor, limit: 500) {
+            cursor
+            items {
+              column_values(types: [people]) {
+                id
+                ... on PeopleValue { persons_and_teams { id kind } }
+              }
+            }
+          }
         }
         """;
     private const string FirstTimePageQuery = """
@@ -41,6 +70,17 @@ public sealed class MondayDirectorySource(
                     history { id status started_at ended_at started_user_id manually_entered_start_date manually_entered_start_time manually_entered_end_date manually_entered_end_time }
                   }
                 }
+                subitems {
+                  id name url board { id }
+                  column_values(types: [people, time_tracking]) {
+                    id
+                    ... on PeopleValue { persons_and_teams { id kind } }
+                    ... on TimeTrackingValue {
+                      running started_at
+                      history { id status started_at ended_at started_user_id manually_entered_start_date manually_entered_start_time manually_entered_end_date manually_entered_end_time }
+                    }
+                  }
+                }
               }
             }
           }
@@ -52,12 +92,23 @@ public sealed class MondayDirectorySource(
             cursor
             items {
               id name url board { id }
-                column_values(types: [people, time_tracking]) {
+              column_values(types: [people, time_tracking]) {
                 id
-                  ... on PeopleValue { persons_and_teams { id kind } }
+                ... on PeopleValue { persons_and_teams { id kind } }
                 ... on TimeTrackingValue {
                   running started_at
                   history { id status started_at ended_at started_user_id manually_entered_start_date manually_entered_start_time manually_entered_end_date manually_entered_end_time }
+                }
+              }
+              subitems {
+                id name url board { id }
+                column_values(types: [people, time_tracking]) {
+                  id
+                  ... on PeopleValue { persons_and_teams { id kind } }
+                  ... on TimeTrackingValue {
+                    running started_at
+                    history { id status started_at ended_at started_user_id manually_entered_start_date manually_entered_start_time manually_entered_end_date manually_entered_end_time }
+                  }
                 }
               }
             }
@@ -69,66 +120,41 @@ public sealed class MondayDirectorySource(
 
     public async Task<ExternalWorkforceDirectorySnapshot> FetchAsync(CancellationToken cancellationToken)
     {
-        var settings = options.Value.Monday;
-        if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.Token))
-            throw new ExternalDirectoryException("monday_not_configured", "Monday integration is not configured.");
-        if (!Uri.TryCreate(settings.ApiUrl, UriKind.Absolute, out var endpoint) || endpoint.Scheme != Uri.UriSchemeHttps)
-            throw new ExternalDirectoryException("monday_invalid_configuration", "Monday API URL must use HTTPS.");
-        if (string.IsNullOrWhiteSpace(settings.BoardId))
-            throw new ExternalDirectoryException("monday_invalid_configuration", "Monday board id is required.");
-
-        HashSet<string>? boardSubscribers = null;
+        var settings = ValidateSettings();
         var users = new Dictionary<string, ExternalWorkforceIdentitySnapshot>(StringComparer.Ordinal);
+        var usersComplete = false;
         for (var page = 1; page <= 20; page++)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            request.Headers.TryAddWithoutValidation("Authorization", settings.Token.Trim());
-            request.Headers.TryAddWithoutValidation("API-Version", settings.ApiVersion);
-            request.Content = JsonContent.Create(new
-            {
-                query = DirectoryQuery,
-                variables = new { ids = new[] { settings.BoardId.Trim() }, page }
-            });
-
-            using var response = await SendAsync(request, cancellationToken);
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            var root = document.RootElement;
-            if (root.TryGetProperty("errors", out var errors) && errors.GetArrayLength() > 0)
-                throw new ExternalDirectoryException("monday_query_failed", "Monday did not complete the directory query.");
-            if (!root.TryGetProperty("data", out var data))
-                throw new ExternalDirectoryException("monday_invalid_response", "Monday returned an invalid response.");
-
-            if (boardSubscribers is null)
-            {
-                if (!data.TryGetProperty("boards", out var boards) || boards.GetArrayLength() != 1)
-                    throw new ExternalDirectoryException("monday_board_unavailable", "The configured Monday board is not available.");
-                var board = boards[0];
-                if (!board.TryGetProperty("subscribers", out var subscribers) || subscribers.ValueKind != JsonValueKind.Array)
-                    throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the board subscribers.");
-                boardSubscribers = subscribers.EnumerateArray()
-                    .Select(item => ReadString(item, "id"))
-                    .Where(id => !string.IsNullOrWhiteSpace(id))
-                    .ToHashSet(StringComparer.Ordinal)!;
-            }
-
+            using var document = await QueryAsync(settings, DirectoryQuery, new { page }, cancellationToken);
+            var data = document.RootElement.GetProperty("data");
             if (!data.TryGetProperty("users", out var pageUsers) || pageUsers.ValueKind != JsonValueKind.Array)
                 throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the active users.");
 
             foreach (var user in pageUsers.EnumerateArray())
             {
                 var id = ReadString(user, "id");
-                if (id is null || !boardSubscribers.Contains(id)) continue;
+                if (id is null) continue;
                 var name = ReadString(user, "name");
                 if (string.IsNullOrWhiteSpace(name)) continue;
                 users[id] = new ExternalWorkforceIdentitySnapshot(id, name, ReadString(user, "email"), true);
             }
 
             if (pageUsers.GetArrayLength() < 100)
-                return new ExternalWorkforceDirectorySnapshot(users.Values.OrderBy(x => x.DisplayName).ToArray(), true);
+            {
+                usersComplete = true;
+                break;
+            }
         }
+        if (!usersComplete)
+            throw new ExternalDirectoryException("monday_directory_limit", "Monday user pagination exceeded the supported limit.");
 
-        throw new ExternalDirectoryException("monday_directory_limit", "Monday user pagination exceeded the supported limit.");
+        var assignedIds = new HashSet<string>(StringComparer.Ordinal);
+        var boards = await LoadBoardSchemasAsync(settings, cancellationToken);
+        foreach (var board in boards.Where(board => board.ResponsibleColumnId is not null))
+            await FetchAssignedUserIdsAsync(settings, board, assignedIds, cancellationToken);
+        return new ExternalWorkforceDirectorySnapshot(
+            users.Values.Where(user => assignedIds.Contains(user.ExternalId))
+                .OrderBy(user => user.DisplayName).ToArray(), true);
     }
 
     async Task<ExternalWorkforceTimeSnapshot> IExternalWorkforceTimeSource.FetchAsync(
@@ -146,9 +172,12 @@ public sealed class MondayDirectorySource(
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
 
         var boards = await LoadBoardSchemasAsync(settings, cancellationToken);
-        foreach (var board in boards)
-            await FetchBoardTimeAsync(settings, board, allowedUsers, from, to, now, timeZone, records,
-                cancellationToken);
+        var subitemBoards = boards.Skip(1).ToDictionary(board => board.Id, StringComparer.Ordinal);
+        await FetchBoardTimeAsync(settings, boards.First(), subitemBoards, allowedUsers, from, to, now, timeZone,
+            records, cancellationToken);
+        foreach (var board in subitemBoards.Values.Where(board => board.ResponsibleColumnId is not null))
+            await FetchBoardTimeAsync(settings, board, subitemBoards, allowedUsers, from, to, now, timeZone,
+                records, cancellationToken);
 
         return new ExternalWorkforceTimeSnapshot(from, to, records.Values.ToArray(), true);
     }
@@ -156,6 +185,7 @@ public sealed class MondayDirectorySource(
     private async Task FetchBoardTimeAsync(
         MondayDirectoryOptions settings,
         MondayBoardSchema board,
+        IReadOnlyDictionary<string, MondayBoardSchema> subitemBoards,
         HashSet<string> allowedUsers,
         DateOnly from,
         DateOnly to,
@@ -192,7 +222,86 @@ public sealed class MondayDirectorySource(
             if (!pageData.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
                 throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the board items.");
             foreach (var item in items.EnumerateArray())
-                ExtractTimeRecords(item, board.ResponsibleColumnId, allowedUsers, from, to, now, timeZone, records);
+            {
+                var assignment = ExtractTimeRecords(item, board.ResponsibleColumnId, null, allowedUsers,
+                    from, to, now, timeZone, records);
+                if (board.Id != settings.BoardId.Trim() ||
+                    !item.TryGetProperty("subitems", out var subitems) ||
+                    subitems.ValueKind != JsonValueKind.Array)
+                    continue;
+                foreach (var subitem in subitems.EnumerateArray())
+                {
+                    var subitemBoardId = subitem.TryGetProperty("board", out var subitemBoard)
+                        ? ReadString(subitemBoard, "id") : null;
+                    var subitemColumnId = subitemBoardId is not null &&
+                        subitemBoards.TryGetValue(subitemBoardId, out var schema)
+                        ? schema.ResponsibleColumnId : null;
+                    ExtractTimeRecords(subitem, subitemColumnId, assignment, allowedUsers,
+                        from, to, now, timeZone, records);
+                }
+            }
+
+            cursor = ReadString(pageData, "cursor");
+            if (string.IsNullOrWhiteSpace(cursor))
+                return;
+            if (!cursors.Add(cursor))
+                throw new ExternalDirectoryException("monday_pagination_repeated", "Monday repeated a pagination cursor.");
+        }
+
+        throw new ExternalDirectoryException("monday_pagination_limit", "Monday item pagination exceeded the supported limit.");
+    }
+
+    private async Task FetchAssignedUserIdsAsync(
+        MondayDirectoryOptions settings,
+        MondayBoardSchema board,
+        ISet<string> assignedIds,
+        CancellationToken cancellationToken)
+    {
+        var cursors = new HashSet<string>(StringComparer.Ordinal);
+        string? cursor = null;
+        for (var page = 0; page < 500; page++)
+        {
+            using var document = page == 0
+                ? await QueryAsync(settings, FirstDirectoryItemsQuery,
+                    new { ids = new[] { board.Id }, professionalColumn = board.ResponsibleColumnId },
+                    cancellationToken)
+                : await QueryAsync(settings, NextDirectoryItemsQuery, new { cursor = cursor! }, cancellationToken);
+            var data = document.RootElement.GetProperty("data");
+            JsonElement pageData;
+            if (page == 0)
+            {
+                var boards = data.GetProperty("boards");
+                if (boards.GetArrayLength() != 1)
+                    throw new ExternalDirectoryException("monday_board_unavailable",
+                        "The configured Monday board is not available.");
+                pageData = boards[0].GetProperty("items_page");
+            }
+            else
+            {
+                pageData = data.GetProperty("next_items_page");
+            }
+
+            if (!pageData.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the board items.");
+            foreach (var item in items.EnumerateArray())
+            {
+                if (!item.TryGetProperty("column_values", out var columns) || columns.ValueKind != JsonValueKind.Array)
+                    throw new ExternalDirectoryException("monday_invalid_response",
+                        "Monday did not return the professional column.");
+                var professional = columns.EnumerateArray()
+                    .FirstOrDefault(column => ReadString(column, "id") == board.ResponsibleColumnId);
+                if (professional.ValueKind == JsonValueKind.Undefined ||
+                    !professional.TryGetProperty("persons_and_teams", out var people) ||
+                    people.ValueKind != JsonValueKind.Array)
+                    throw new ExternalDirectoryException("monday_invalid_response",
+                        "Monday did not return the assigned professionals.");
+                var personIds = people.EnumerateArray()
+                    .Where(person => ReadString(person, "kind") == "person")
+                    .Select(person => ReadString(person, "id"))
+                    .Where(id => id is not null).Distinct(StringComparer.Ordinal).ToArray();
+                foreach (var id in personIds)
+                    assignedIds.Add(id!);
+            }
 
             cursor = ReadString(pageData, "cursor");
             if (string.IsNullOrWhiteSpace(cursor))
@@ -211,7 +320,7 @@ public sealed class MondayDirectorySource(
         using var mainDocument = await QueryAsync(settings, BoardSchemaQuery,
             new { ids = new[] { settings.BoardId.Trim() } }, cancellationToken);
         var mainBoard = SingleBoard(mainDocument);
-        var schemas = new List<MondayBoardSchema> { ParseBoardSchema(mainBoard) };
+        var schemas = new List<MondayBoardSchema> { ParseBoardSchema(mainBoard, true) };
         if (ReadString(mainBoard, "hierarchy_type") != "classic")
             return schemas;
 
@@ -230,7 +339,7 @@ public sealed class MondayDirectorySource(
             throw new ExternalDirectoryException("monday_subitem_board_unavailable",
                 "Monday did not return the configured subitem board.");
         foreach (var board in subitemBoards.EnumerateArray())
-            schemas.Add(ParseBoardSchema(board));
+            schemas.Add(ParseBoardSchema(board, false));
         return schemas;
     }
 
@@ -242,7 +351,7 @@ public sealed class MondayDirectorySource(
         return boards[0];
     }
 
-    private static MondayBoardSchema ParseBoardSchema(JsonElement board)
+    private static MondayBoardSchema ParseBoardSchema(JsonElement board, bool responsibleRequired)
     {
         var boardId = ReadString(board, "id") ?? throw new ExternalDirectoryException(
             "monday_invalid_response", "Monday did not return a board id.");
@@ -253,15 +362,21 @@ public sealed class MondayDirectorySource(
             .Select(x => new { Id = ReadString(x, "id"), Title = ReadString(x, "title") })
             .Where(x => x.Id is not null)
             .ToArray();
+        var professionalColumns = peopleColumns.Where(x =>
+            string.Equals(x.Title?.Trim(), "Profissional", StringComparison.OrdinalIgnoreCase)).ToArray();
         var responsibleColumns = peopleColumns.Where(x =>
             x.Title?.Contains("respons", StringComparison.OrdinalIgnoreCase) == true).ToArray();
-        var selected = responsibleColumns.Length == 1
-            ? responsibleColumns[0]
-            : peopleColumns.Length == 1 ? peopleColumns[0] : null;
-        if (selected is null)
+        var selected = professionalColumns.Length == 1
+            ? professionalColumns[0]
+            : professionalColumns.Length == 0 && responsibleColumns.Length == 1
+                ? responsibleColumns[0]
+                : professionalColumns.Length == 0 && responsibleColumns.Length == 0 && peopleColumns.Length == 1
+                    ? peopleColumns[0]
+                    : null;
+        if (selected is null && (responsibleRequired || peopleColumns.Length > 0))
             throw new ExternalDirectoryException("monday_responsible_column_unavailable",
                 "Monday must have one identifiable People column for the activity responsible person.");
-        return new MondayBoardSchema(boardId, selected.Id!);
+        return new MondayBoardSchema(boardId, selected?.Id);
     }
 
     private static IReadOnlyCollection<string> ReadSubitemBoardIds(JsonElement column)
@@ -320,9 +435,10 @@ public sealed class MondayDirectorySource(
         return document;
     }
 
-    private static void ExtractTimeRecords(
+    private static ResponsibleAssignment ExtractTimeRecords(
         JsonElement item,
-        string responsibleColumnId,
+        string? responsibleColumnId,
+        ResponsibleAssignment? inheritedAssignment,
         HashSet<string> allowedUsers,
         DateOnly from,
         DateOnly to,
@@ -335,22 +451,27 @@ public sealed class MondayDirectorySource(
         var itemUrl = ReadString(item, "url");
         if (item.TryGetProperty("column_values", out var columns) && columns.ValueKind == JsonValueKind.Array)
         {
-            var responsibleColumn = columns.EnumerateArray()
-                .FirstOrDefault(column => ReadString(column, "id") == responsibleColumnId);
-            if (responsibleColumn.ValueKind == JsonValueKind.Undefined ||
-                !responsibleColumn.TryGetProperty("persons_and_teams", out var people) ||
+            var responsibleColumn = responsibleColumnId is null
+                ? default
+                : columns.EnumerateArray()
+                    .FirstOrDefault(column => ReadString(column, "id") == responsibleColumnId);
+            var people = responsibleColumn.ValueKind != JsonValueKind.Undefined &&
+                responsibleColumn.TryGetProperty("persons_and_teams", out var peopleValue)
+                ? peopleValue : default;
+            if (people.ValueKind != JsonValueKind.Undefined &&
                 people.ValueKind != JsonValueKind.Array)
-                return;
-            var responsibleIds = people.EnumerateArray()
+                throw new ExternalDirectoryException("monday_invalid_response",
+                    "Monday returned invalid responsible people.");
+            var responsibleIds = people.ValueKind == JsonValueKind.Array ? people.EnumerateArray()
                 .Where(person => ReadString(person, "kind") == "person")
                 .Select(person => ReadString(person, "id"))
-                .Where(id => id is not null).Distinct(StringComparer.Ordinal).ToArray();
-            if (responsibleIds.Length > 1)
-                throw new ExternalDirectoryException("monday_multiple_responsibles",
-                    "A Monday activity has more than one responsible person.");
-            var responsibleId = responsibleIds.SingleOrDefault();
-            if (responsibleId is null || !allowedUsers.Contains(responsibleId))
-                return;
+                .Where(id => id is not null).Distinct(StringComparer.Ordinal).ToArray() : [];
+            var assignment = responsibleIds.Length switch
+            {
+                > 1 => new ResponsibleAssignment(null, true),
+                1 => new ResponsibleAssignment(responsibleIds[0], false),
+                _ => inheritedAssignment ?? new ResponsibleAssignment(null, false)
+            };
 
             foreach (var column in columns.EnumerateArray())
             {
@@ -373,6 +494,9 @@ public sealed class MondayDirectorySource(
                     var startedByUserId = ReadString(entry, "started_user_id");
                     var workDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(startedAt.Value, timeZone).DateTime);
                     if (workDate < from || workDate > to) continue;
+                    if (assignment.Ambiguous) continue;
+                    var responsibleId = assignment.IdentityId;
+                    if (responsibleId is null || !allowedUsers.Contains(responsibleId)) continue;
                     var historyId = ReadString(entry, "id");
                     var columnId = ReadString(column, "id");
                     if (historyId is null || columnId is null) continue;
@@ -390,10 +514,13 @@ public sealed class MondayDirectorySource(
                         itemName, itemUrl, details);
                 }
             }
+            return assignment;
         }
+        return inheritedAssignment ?? new ResponsibleAssignment(null, false);
     }
 
-    private sealed record MondayBoardSchema(string Id, string ResponsibleColumnId);
+    private sealed record MondayBoardSchema(string Id, string? ResponsibleColumnId);
+    private sealed record ResponsibleAssignment(string? IdentityId, bool Ambiguous);
 
     private static bool IsDeleted(JsonElement entry)
         => ReadString(entry, "status")?.Contains("deleted", StringComparison.OrdinalIgnoreCase) == true;

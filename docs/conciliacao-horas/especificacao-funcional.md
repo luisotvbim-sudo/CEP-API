@@ -172,7 +172,7 @@ O total válido representa o tempo de jornada apurado, com os intervalos aplicá
 
 Somar apenas os lançamentos elegíveis atribuídos à pessoa no dia. A configuração define boards, atividades e categorias incluídos ou excluídos. Atividade compartilhada, cronômetro em andamento, duração inválida, sobreposição e registro sem data/pessoa suficientes precisam ser identificados. Não inventar horas nem duplicar lançamentos para preencher lacunas.
 
-No board Monday integrado, o único responsável no campo Pessoa da atividade ou do subitem recebe suas sessões de tempo, mesmo se outra pessoa iniciar ou parar o relógio. Mais de um responsável numa atividade é erro de qualidade de dados e não deve multiplicar horas silenciosamente.
+No board Monday integrado, o único profissional na coluna Pessoa `PROFISSIONAL` recebe as sessões de tempo do item, mesmo se outra pessoa iniciar ou parar o relógio. No subitem, um profissional próprio preenchido prevalece; sem ele, o profissional do item pai é herdado. A coluna `R.T.` não atribui horas. Sessões de atividade com mais de um profissional são ignoradas, inclusive nos subitens que herdam essa ambiguidade; não se multiplicam horas silenciosamente.
 
 ### RN-04 — Convenção da diferença
 

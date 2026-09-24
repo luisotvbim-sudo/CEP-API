@@ -264,7 +264,7 @@ Regras de UX:
 - `409 sync_scope_empty`: informar que não há identidades ativas associadas nas duas fontes para as pessoas do escopo; orientar contato com o coordenador;
 - `partiallySucceeded`: usar alerta amarelo e mostrar qual fonte falhou;
 - `failed`: manter o último conteúdo persistido visível e mostrar erro;
-- erro Monday de coluna Responsável ausente/ambígua ou múltiplos responsáveis: encaminhar ao coordenador, sem apresentar totais como completos;
+- erro Monday de coluna `PROFISSIONAL` ausente/ambígua: encaminhar ao coordenador, sem apresentar totais como completos; sessões com múltiplos profissionais são ignoradas na importação, sem atribuição presumida;
 - “reprocessar” sempre pede confirmação porque pode consumir mais tempo e chamadas externas.
 
 ### 6.2. Identidades externas
