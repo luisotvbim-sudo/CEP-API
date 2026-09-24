@@ -1,6 +1,6 @@
 # CEP Horas — guia de implementação de todas as telas do front
 
-Atualizado em 23/09/2026. Destinatário: agentes e desenvolvedores do repositório `CEP-FRONT`.
+Atualizado em 24/09/2026. Destinatário: agentes e desenvolvedores do repositório `CEP-FRONT`.
 
 Este é um **handoff de implementação**, não uma afirmação de que todas as telas ou regras de conciliação já funcionem. O objetivo é permitir construir a experiência completa de Membro, Líder e Coordenador sem confundir visão do produto com contrato disponível. Para a regra de negócio, ler também [a especificação funcional](conciliacao-horas/especificacao-funcional.md); para os contratos administrativos detalhados, ler [a integração Monday/VR Mais](workforce-admin-integration.md). O OpenAPI gerado da **branch de backend que será consumida** e o código da API prevalecem quando houver divergência técnica.
 
@@ -25,7 +25,8 @@ As métricas consolidadas, a comparação oficial, o calendário, as tolerância
 | Sincronização manual por Membro/Líder/Coordenador | 7 dias normais; 90 dias em carga inicial/admin `full=true` | Só tela administrativa, ainda com texto de 60 dias | Corrigir e disponibilizar ação conforme perfil. |
 | Histórico bruto por pessoa/fonte/período | Disponível, até 90 dias por requisição | Só tela administrativa, ainda limitada a 60 dias no cliente | Corrigir e expor versão pessoal/gestão com escopo da API. |
 | Resumo comparado, saldo, diferença por pessoa/time | Não disponível | Não disponível | Especificar telas; bloquear valores reais até contrato de conciliação. |
-| Divergências, alertas, notificações, justificativas, aprovação | Não disponível | Não disponível | Planejar telas; não simular envio ou decisão. |
+| Configuração dos horários de avisos automáticos | Disponível para Coordenador/SystemAdmin; padrão 11:50 `America/Sao_Paulo` | Não disponível | Integrar a configuração, sem afirmar que houve envio. |
+| Divergências, alertas, notificações concretas, justificativas, aprovação | Não disponível | Não disponível | Planejar telas; não simular envio ou decisão. |
 | Exportação e relatórios conciliados | Não disponível | Não disponível | Planejar; não exportar “conciliação” calculada no cliente. |
 
 O front usa React 19, TypeScript, Vite, `src/App.tsx`, `src/admin/*`, `src/auth/*`, CSS próprio e um host WPF/WebView2. `App.tsx` hoje encaminha `organizationAdmin` para `AdminShell`, `systemAdmin` para seleção de organização e mostra ao usuário comum apenas “área de membro e líder ainda não disponível”. `AdminShell` já contém Pessoas, Associar e convidar, Sincronização, Times e Histórico. Antes de codar no `CEP-FRONT`, cumprir o `AGENTS.md` daquele repositório e conferir seus snapshots OpenAPI. Em 23/09, a API local em `127.0.0.1:8080` não estava respondendo; por isso este documento foi conferido contra os controllers/contratos da branch, **não** contra uma sessão local ativa ou dados reais das fontes.
@@ -80,11 +81,12 @@ Prefixo HTTP `/api/v1`; no `AuthClient` atual, os caminhos passados a `request` 
 | Convites/usuários | `GET /organization/invitations`, `POST /organization/invitations/{id}/resend`, `GET /organization/users`, `PATCH /organization/users/{id}` | Coordenador administra papéis. `PATCH` pede `role` e `status`, além de `displayName`/`products` opcionais: preservar valores existentes ao editar. |
 | Administração de times | `POST /organization/time-control/teams`, `PATCH /teams/{teamId}`, `POST /teams/{teamId}/assignments`, `PATCH /teams/{teamId}/assignments/{assignmentId}/end` | `CreateTeamAssignmentRequest={userId,role,effectiveFrom,effectiveTo}`; conflito de vigência gera 409. |
 | Auditoria | `GET /organization/audit?before=&pageSize=` | Apenas administração, eventos em ordem decrescente; não é histórico de casos de conciliação. |
+| Horários dos avisos | `GET`, `POST /organization/time-control/notification-schedules`; `PATCH /organization/time-control/notification-schedules/{scheduleId}` | Coordenador/SystemAdmin; múltiplos horários, precisão de minuto, identificador de fuso válido e ativação/desativação. Padrão `11:50:00`, `America/Sao_Paulo`. Ainda não dispara notificações sem a regra oficial. |
 | Organização técnica | `GET /admin/organizations`, `POST /admin/organizations` | Somente `systemAdmin`; manter seleção explícita. |
 
 Para respostas completas de identidade, convite, lote de sincronização e registro bruto, usar o OpenAPI e [o contrato administrativo](workforce-admin-integration.md). Campos essenciais do histórico: `people[]` com `workforcePersonId`, `userId`, `displayName`, `email`, `records[]`; cada registro traz `id`, `source`, `externalKey`, `workDate`, `startedAt`, `endedAt`, `durationSeconds`, `state`, `title`, `url`, `detailsJson` e `lastSyncedAt`. O VR Mais pode devolver um dia `missing` ou `unrecognized` com duração `null`; Monday usa `closed` ou `running`. `detailsJson` é um **string JSON opcional e de formato específico da fonte**: fazer parse defensivo e renderizar texto, nunca HTML bruto. Só abrir `url` validada como HTTPS.
 
-Não existe hoje endpoint para: resumo/saldo oficial, comparação diária, membros filtrados por `teamId` no histórico, cobertura por pessoa/dia, “último sucesso” de cada fonte, notificações, casos, justificativas, relatórios, calendário/regras ou exportação. Não inventar rotas ou preencher esses dados com mocks em produção.
+Não existe hoje endpoint para: resumo/saldo oficial, comparação diária, membros filtrados por `teamId` no histórico, cobertura por pessoa/dia, “último sucesso” de cada fonte, notificações concretas, casos, justificativas, relatórios, calendário/regras ou exportação. A agenda administrativa disponível não substitui esses contratos. Não inventar rotas ou preencher esses dados com mocks em produção.
 
 ## 5. Mapa de navegação proposto
 

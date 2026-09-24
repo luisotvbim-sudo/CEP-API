@@ -74,6 +74,18 @@ public sealed partial class OrganizationsController(
             CreatedByUserId = CurrentUserId
         };
         db.Organizations.Add(organization);
+        db.AutomaticNotificationSchedules.Add(new AutomaticNotificationSchedule
+        {
+            OrganizationId = organization.Id,
+            Organization = organization,
+            LocalTime = AutomaticNotificationDefaults.LocalTime,
+            TimeZoneId = AutomaticNotificationDefaults.TimeZoneId,
+            IsEnabled = true,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CreatedByUserId = CurrentUserId,
+            UpdatedByUserId = CurrentUserId
+        });
         db.Invitations.Add(invitation);
         emailQueue.Invitation(request.InitialAdminEmail.Trim(), organization.Name, code, invitation.ExpiresAt);
         await audit.WriteAsync("organization.created", organization.Id, CurrentUserId, details: new { organization.Id, organization.Slug }, ipAddress: IpAddress, cancellationToken: cancellationToken);

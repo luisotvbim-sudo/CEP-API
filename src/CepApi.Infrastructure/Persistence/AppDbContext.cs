@@ -24,6 +24,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<WorkforceSyncBatch> WorkforceSyncBatches => Set<WorkforceSyncBatch>();
     public DbSet<WorkforceSyncSourceRun> WorkforceSyncSourceRuns => Set<WorkforceSyncSourceRun>();
     public DbSet<WorkforceTimeRecord> WorkforceTimeRecords => Set<WorkforceTimeRecord>();
+    public DbSet<AutomaticNotificationSchedule> AutomaticNotificationSchedules => Set<AutomaticNotificationSchedule>();
+    public DbSet<AutomaticNotificationExecution> AutomaticNotificationExecutions => Set<AutomaticNotificationExecution>();
+    public DbSet<TimeControlNotification> TimeControlNotifications => Set<TimeControlNotification>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -216,6 +219,56 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.ExternalIdentity).WithMany().HasForeignKey(x => x.ExternalIdentityId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<AutomaticNotificationSchedule>(entity =>
+        {
+            entity.ToTable("automatic_notification_schedules", table => table.HasCheckConstraint(
+                "ck_automatic_notification_schedules_minute_precision",
+                "date_part('second', \"LocalTime\") = 0"));
+            entity.Property(x => x.LocalTime).HasColumnType("time without time zone").HasPrecision(0);
+            entity.Property(x => x.TimeZoneId).HasMaxLength(100);
+            entity.HasIndex(x => new { x.OrganizationId, x.LocalTime, x.TimeZoneId }).IsUnique();
+            entity.HasIndex(x => new { x.OrganizationId, x.IsEnabled });
+            entity.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AutomaticNotificationExecution>(entity =>
+        {
+            entity.ToTable("automatic_notification_executions", table =>
+            {
+                table.HasCheckConstraint("ck_automatic_notification_executions_attempts", "\"Attempts\" > 0");
+                table.HasCheckConstraint("ck_automatic_notification_executions_notification_count",
+                    "\"CreatedNotificationCount\" >= 0");
+            });
+            entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.ErrorCode).HasMaxLength(100);
+            entity.Property(x => x.ErrorMessage).HasMaxLength(500);
+            entity.HasIndex(x => new { x.ScheduleId, x.LocalDate }).IsUnique();
+            entity.HasIndex(x => new { x.Status, x.LeaseExpiresAt });
+            entity.HasOne(x => x.Schedule).WithMany().HasForeignKey(x => x.ScheduleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<TimeControlNotification>(entity =>
+        {
+            entity.ToTable("time_control_notifications");
+            entity.Property(x => x.Kind).HasMaxLength(50);
+            entity.Property(x => x.Title).HasMaxLength(200);
+            entity.Property(x => x.Body).HasMaxLength(2000);
+            entity.Property(x => x.DataJson).HasColumnType("jsonb");
+            entity.Property(x => x.DedupeKey).HasMaxLength(200);
+            entity.HasIndex(x => new { x.OrganizationId, x.RecipientUserId, x.DedupeKey }).IsUnique();
+            entity.HasIndex(x => new { x.RecipientUserId, x.ReadAt, x.CreatedAt });
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RecipientUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Execution).WithMany().HasForeignKey(x => x.ExecutionId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

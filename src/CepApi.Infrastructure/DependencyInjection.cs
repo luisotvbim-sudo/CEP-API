@@ -56,6 +56,7 @@ public static class DependencyInjection
         services.AddScoped<WorkforceSnapshotWriter>();
         services.AddScoped<WorkforceSyncPeriodResolver>();
         services.AddScoped<IWorkforceDirectorySyncService, WorkforceDirectorySyncService>();
+        services.AddScoped<AutomaticNotificationExecutionStore>();
         services.AddHttpClient<MondayDirectorySource>(client => client.Timeout = TimeSpan.FromSeconds(45))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddHttpClient<VrMaisDirectorySource>(client => client.Timeout = TimeSpan.FromSeconds(45))
