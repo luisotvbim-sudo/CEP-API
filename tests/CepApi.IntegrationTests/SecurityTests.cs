@@ -240,10 +240,16 @@ public sealed class SecurityFixture : IAsyncLifetime
         var email = $"user-{Guid.NewGuid():N}@example.test";
         var user = new ApplicationUser
         {
-            Id = Guid.CreateVersion7(), UserName = email, Email = email, EmailConfirmed = true,
-            DisplayName = "Security test", Role = role, Status = UserStatus.Active,
+            Id = Guid.CreateVersion7(),
+            UserName = email,
+            Email = email,
+            EmailConfirmed = true,
+            DisplayName = "Security test",
+            Role = role,
+            Status = UserStatus.Active,
             OrganizationId = role == UserRole.SystemAdmin ? null : organization.Id,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
         };
         var result = await scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>().CreateAsync(user, Password);
         Assert.True(result.Succeeded, string.Join(",", result.Errors.Select(x => x.Description)));

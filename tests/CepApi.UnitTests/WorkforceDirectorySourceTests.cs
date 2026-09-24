@@ -27,25 +27,82 @@ public sealed class WorkforceDirectorySourceTests
     }
 
     [Fact]
-    public async Task Monday_time_source_normalizes_a_closed_session()
+    public async Task Monday_time_source_filters_by_responsible_and_attributes_sessions_to_that_person()
     {
-        using var client = new HttpClient(new JsonHandler(_ => """
+        using var client = new HttpClient(new JsonHandler(request =>
+        {
+            var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (body.Contains("hierarchy_type", StringComparison.Ordinal))
+                return """
+                    {"data":{"boards":[{"id":"9920862624","hierarchy_type":"multi_level",
+                    "columns":[{"id":"responsavel","title":"Responsável","type":"people","settings":null}]}]}}
+                    """;
+            Assert.Contains("person-1", body, StringComparison.Ordinal);
+            Assert.Contains("responsavel", body, StringComparison.Ordinal);
+            return """
             {"data":{"boards":[{"id":"9920862624","items_page":{"cursor":null,"items":[{
               "id":"item-1","name":"Projeto","url":"https://example.monday.com/boards/1","board":{"id":"9920862624"},
-              "column_values":[{"id":"time","running":false,"started_at":null,"history":[{
+              "column_values":[{"id":"responsavel","persons_and_teams":[{"id":"1","kind":"person"}]},
+                {"id":"time","running":false,"started_at":null,"history":[{
                 "id":"session-1","status":"STOPPED","started_at":"2026-09-20T12:00:00Z","ended_at":"2026-09-20T13:00:00Z",
-                "started_user_id":"1","manually_entered_start_date":false,"manually_entered_start_time":false,
-                "manually_entered_end_date":false,"manually_entered_end_time":false}]}],"subitems":[]}]}}]}}
-            """));
+                "started_user_id":"2","manually_entered_start_date":false,"manually_entered_start_time":false,
+                "manually_entered_end_date":false,"manually_entered_end_time":false},
+                {"id":"session-old","status":"STOPPED","started_at":"2026-09-01T12:00:00Z","ended_at":"2026-09-01T13:00:00Z",
+                "started_user_id":"2"}]}]}]}}]}}
+            """;
+        }));
         var source = new MondayDirectorySource(client, Options.Create(OptionsValue()));
 
         var result = await ((IExternalWorkforceTimeSource)source).FetchAsync(
             new DateOnly(2026, 9, 20), new DateOnly(2026, 9, 20), ["1"], TestContext.Current.CancellationToken);
 
         var record = Assert.Single(result.Records);
+        Assert.Equal("1", record.ExternalIdentityId);
         Assert.Equal("item-1:time:session-1", record.ExternalKey);
         Assert.Equal(3600, record.DurationSeconds);
         Assert.Equal("closed", record.State);
+        Assert.Contains("\"startedByUserId\":\"2\"", record.DetailsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Monday_time_source_filters_classic_subitems_by_their_own_responsible_column()
+    {
+        using var client = new HttpClient(new JsonHandler(request =>
+        {
+            var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            var subitemBoard = body.Contains("sub-board", StringComparison.Ordinal);
+            if (body.Contains("hierarchy_type", StringComparison.Ordinal))
+                return subitemBoard
+                    ? """
+                      {"data":{"boards":[{"id":"sub-board","hierarchy_type":"classic",
+                      "columns":[{"id":"sub_owner","title":"Responsável","type":"people","settings":null}]}]}}
+                      """
+                    : """
+                      {"data":{"boards":[{"id":"9920862624","hierarchy_type":"classic",
+                      "columns":[{"id":"owner","title":"Responsável","type":"people","settings":null},
+                      {"id":"subitems","title":"Subitens","type":"subtasks","settings":{"boardIds":["sub-board"]}}]}]}}
+                      """;
+            Assert.Contains("person-1", body, StringComparison.Ordinal);
+            return subitemBoard
+                ? """
+                  {"data":{"boards":[{"id":"sub-board","items_page":{"cursor":null,"items":[{
+                    "id":"subitem-1","name":"Atividade","url":"https://example.monday.com/subitems/1",
+                    "board":{"id":"sub-board"},"column_values":[
+                      {"id":"sub_owner","persons_and_teams":[{"id":"1","kind":"person"}]},
+                      {"id":"time","running":false,"history":[{"id":"session-1","status":"STOPPED",
+                        "started_at":"2026-09-20T12:00:00Z","ended_at":"2026-09-20T13:00:00Z",
+                        "started_user_id":"2"}]}]}]}}]}}
+                  """
+                : """{"data":{"boards":[{"id":"9920862624","items_page":{"cursor":null,"items":[]}}]}}""";
+        }));
+        var source = new MondayDirectorySource(client, Options.Create(OptionsValue()));
+
+        var result = await ((IExternalWorkforceTimeSource)source).FetchAsync(
+            new DateOnly(2026, 9, 20), new DateOnly(2026, 9, 20), ["1"], TestContext.Current.CancellationToken);
+
+        var record = Assert.Single(result.Records);
+        Assert.Equal("1", record.ExternalIdentityId);
+        Assert.Equal("subitem-1:time:session-1", record.ExternalKey);
     }
 
     [Fact]

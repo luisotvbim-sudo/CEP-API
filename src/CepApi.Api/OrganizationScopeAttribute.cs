@@ -64,6 +64,8 @@ public sealed class OrganizationScopeOperationFilter : IOperationFilter
     {
         if (!context.MethodInfo.DeclaringType!.IsDefined(typeof(OrganizationScopeAttribute), true)) return;
         operation.Parameters ??= [];
+        if (operation.Parameters.Any(parameter =>
+                parameter.In == ParameterLocation.Query && parameter.Name == "organizationId")) return;
         operation.Parameters.Add(new OpenApiParameter
         {
             Name = "organizationId", In = ParameterLocation.Query, Required = false,

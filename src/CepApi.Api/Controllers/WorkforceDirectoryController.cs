@@ -1,4 +1,5 @@
 using CepApi.Application;
+using CepApi.Api.Authorization;
 using CepApi.Domain;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -8,14 +9,17 @@ using Microsoft.EntityFrameworkCore;
 namespace CepApi.Api.Controllers;
 
 [Route("api/v1/organization/time-control")]
-[Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)}")]
+[Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)},{nameof(UserRole.User)}")]
 [OrganizationScope]
 public sealed class WorkforceDirectoryController(
     AppDbContext db,
     IWorkforceDirectorySyncService syncService,
-    IAuditService audit) : ApiControllerBase
+    IAuditService audit,
+    OrganizationScopeService organizationScope,
+    TimeControlAccessService accessService) : ApiControllerBase
 {
     [HttpGet("external-identities")]
+    [Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)}")]
     public async Task<ActionResult<PagedResponse<ExternalWorkforceIdentityResponse>>> ListExternalIdentities(
         [FromQuery] ExternalWorkforceSource? source,
         [FromQuery] bool activeOnly = true,
@@ -23,13 +27,13 @@ public sealed class WorkforceDirectoryController(
         [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var organizationId = RequireOrganizationId();
-        page = Math.Max(1, page);
-        pageSize = Math.Clamp(pageSize, 1, 200);
+        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        (page, pageSize) = NormalizePage(page, pageSize, 200);
         var query = db.ExternalWorkforceIdentities.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId);
+            .Where(x => x.OrganizationId == scopedOrganizationId);
         if (source is not null) query = query.Where(x => x.Source == source);
         if (activeOnly) query = query.Where(x => x.IsActive);
         if (!string.IsNullOrWhiteSpace(search))
@@ -67,13 +71,25 @@ public sealed class WorkforceDirectoryController(
     [HttpPost("synchronizations")]
     public async Task<ActionResult<WorkforceSyncResponse>> Synchronize(
         [FromQuery] bool full = false,
+        [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var organizationId = RequireOrganizationId();
+        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        if (full && CurrentRole == UserRole.User)
+            return ApiProblem(StatusCodes.Status403Forbidden,
+                "Full synchronization requires organization administration access.", "full_sync_forbidden");
+        IReadOnlyCollection<Guid>? visibleUserIds = null;
+        if (CurrentRole == UserRole.User)
+        {
+            var access = await accessService.ResolveAsync(
+                scopedOrganizationId, CurrentUserId, CurrentRole, cancellationToken);
+            visibleUserIds = access.VisibleUserIds.Append(CurrentUserId).Distinct().ToArray();
+        }
         try
         {
-            var batch = await syncService.SynchronizeAsync(organizationId, CurrentUserId, full, cancellationToken);
-            await audit.WriteAsync("time_control.directory_synchronized", organizationId, CurrentUserId,
+            var batch = await syncService.SynchronizeAsync(
+                scopedOrganizationId, CurrentUserId, full, visibleUserIds, cancellationToken);
+            await audit.WriteAsync("time_control.directory_synchronized", scopedOrganizationId, CurrentUserId,
                 details: new
                 {
                     batch.Id,
@@ -87,14 +103,23 @@ public sealed class WorkforceDirectoryController(
         {
             return ApiProblem(StatusCodes.Status409Conflict, exception.Message, exception.Code);
         }
+        catch (ExternalDirectoryException exception) when (exception.Code == "sync_scope_empty")
+        {
+            return ApiProblem(StatusCodes.Status409Conflict, exception.Message, exception.Code);
+        }
     }
 
     [HttpGet("synchronizations/latest")]
-    public async Task<ActionResult<WorkforceSyncResponse>> LatestSynchronization(CancellationToken cancellationToken)
+    public async Task<ActionResult<WorkforceSyncResponse>> LatestSynchronization(
+        [FromQuery] Guid? organizationId = null,
+        CancellationToken cancellationToken = default)
     {
-        var organizationId = RequireOrganizationId();
-        var batch = await db.WorkforceSyncBatches.AsNoTracking().Include(x => x.Sources)
-            .Where(x => x.OrganizationId == organizationId)
+        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var query = db.WorkforceSyncBatches.AsNoTracking().Include(x => x.Sources)
+            .Where(x => x.OrganizationId == scopedOrganizationId);
+        if (CurrentRole == UserRole.User)
+            query = query.Where(x => x.RequestedByUserId == CurrentUserId);
+        var batch = await query
             .OrderByDescending(x => x.StartedAt)
             .FirstOrDefaultAsync(cancellationToken);
         return batch is null
@@ -105,18 +130,19 @@ public sealed class WorkforceDirectoryController(
     [HttpGet("synchronizations/{batchId:guid}")]
     public async Task<ActionResult<WorkforceSyncResponse>> GetSynchronization(
         Guid batchId,
-        CancellationToken cancellationToken)
+        [FromQuery] Guid? organizationId = null,
+        CancellationToken cancellationToken = default)
     {
-        var organizationId = RequireOrganizationId();
-        var batch = await db.WorkforceSyncBatches.AsNoTracking().Include(x => x.Sources)
-            .SingleOrDefaultAsync(x => x.Id == batchId && x.OrganizationId == organizationId, cancellationToken);
+        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var query = db.WorkforceSyncBatches.AsNoTracking().Include(x => x.Sources)
+            .Where(x => x.Id == batchId && x.OrganizationId == scopedOrganizationId);
+        if (CurrentRole == UserRole.User)
+            query = query.Where(x => x.RequestedByUserId == CurrentUserId);
+        var batch = await query.SingleOrDefaultAsync(cancellationToken);
         return batch is null
             ? ApiProblem(StatusCodes.Status404NotFound, "Workforce synchronization not found.", "sync_not_found")
             : Ok(ToResponse(batch));
     }
-
-    private Guid RequireOrganizationId()
-        => CurrentOrganizationId ?? throw new InvalidOperationException("An organization claim is required.");
 
     private static WorkforceSyncResponse ToResponse(WorkforceSyncBatch batch)
         => new(batch.Id, batch.Status, batch.StartedAt, batch.CompletedAt,

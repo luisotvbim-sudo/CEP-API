@@ -11,25 +11,30 @@ A sessão web do CEP Horas pode persistir por até sete dias usando cookie HttpO
 - Convites e recuperação de senha por SMTP, sem cadastro público.
 - Acesso separado aos produtos Revit e ZWCAD.
 - Sessões revogáveis, lockout, rate limiting e detecção de reutilização de refresh token.
+- Sessão web com refresh token protegido em cookie `HttpOnly`, `Secure` e `SameSite=Strict`.
 - Auditoria administrativa, JWKS público, Swagger e health checks.
-- Equipes de controle de ponto e vínculos efetivos de membros e gestores.
+- Times do CEP Horas e vínculos temporais de membros e líderes.
 - Migrations explícitas, testes unitários e fluxo de integração com PostgreSQL real.
 
 ## Controle de ponto
 
-A primeira etapa do backend implementa o cadastro de equipes e os vínculos de membros e gestores com vigência e histórico. Os endpoints ficam em `api/v1/organization/time-control/teams` e são restritos ao administrador da organização. O servidor impede nomes duplicados, vínculos sobrepostos e associação de usuários de outra organização.
+A primeira etapa do backend implementa o cadastro de times e os vínculos de membros e líderes com vigência e histórico. O Coordenador (`OrganizationAdmin`) cria e edita times, define membros e líderes e pode promover outros coordenadores. O Líder (`Manager`) consulta somente os times que lidera e as pessoas vinculadas a eles. O Membro (`Member`) consulta somente a própria associação e os próprios registros. O escopo é recalculado no banco a cada requisição, sem depender da expiração do JWT.
 
-A importação administrativa do Monday e do Ponto VR Mais persiste identidades e apontamentos com retenção móvel de 90 dias. Calendário, regras de tolerância, tratamento de divergências e conciliação diária completa continuam nas próximas etapas descritas na [especificação funcional](docs/conciliacao-horas/especificacao-funcional.md).
+A importação administrativa do Monday e do Ponto VR Mais persiste identidades e apontamentos com retenção móvel de 90 dias. Calendário, regras de tolerância, conciliação, tratamento de divergências, alertas e relatórios formatados continuam nas próximas etapas. A [especificação funcional](docs/conciliacao-horas/especificacao-funcional.md) é a fonte de verdade do produto para trabalho com outros agentes.
+
+Para implementar as telas no `CEP-FRONT`, use o [guia de telas e contratos do front](docs/guia-telas-frontend-cep-horas.md), que separa as funcionalidades disponíveis das que ainda dependem de endpoints de conciliação.
+
+O `SystemAdmin` continua sendo um perfil técnico. Para suporte pelo front administrativo, ele pode selecionar explicitamente uma organização usando `organizationId`; usuários da organização não podem trocar esse escopo.
 
 ### Cadastro administrativo das identidades externas
 
 O backend já possui o fluxo administrativo que antecede a conciliação:
 
-- `POST /api/v1/organization/time-control/synchronizations` lê os diretórios do Monday e do VR Mais e persiste o resultado por organização.
+- `POST /api/v1/organization/time-control/synchronizations` atualiza sete dias conforme o escopo do solicitante: membro, próprios dados; líder, próprios dados e time; coordenador, organização. A carga inicial e `full=true` administrativos cobrem 90 dias. O VR Mais recebe IDs e datas; o Monday filtra atividades por responsável na origem e as sessões por data após a leitura.
 - `GET /api/v1/organization/time-control/external-identities` permite pesquisar e filtrar identidades ativas, associadas ou pendentes.
 - `POST /api/v1/organization/time-control/people/invitations` associa uma identidade Monday a uma identidade VR Mais e envia o convite do usuário.
 - `GET /api/v1/organization/time-control/people` lista as associações e o estado do convite/usuário.
-- `GET /api/v1/organization/time-control/history` consulta os registros persistidos de pessoas autorizadas em períodos de até 60 dias.
+- `GET /api/v1/organization/time-control/history` consulta os registros persistidos de pessoas autorizadas em períodos de até 90 dias.
 
 O aceite do convite liga a conta criada à associação já aprovada pelo administrador. IDs externos não podem ser usados por duas pessoas, as sincronizações são isoladas por organização e falhas das fontes são apresentadas separadamente. Consulte [o contrato administrativo](docs/workforce-admin-integration.md) para os filtros, respostas e estados.
 
@@ -86,7 +91,7 @@ As chaves usam a sintaxe hierárquica do ASP.NET Core (`__` em variáveis de amb
 - `Jwt__PreviousPublicKeys__0__KeyId` e `Jwt__PreviousPublicKeys__0__PublicKeyPem`: chaves anteriores aceitas durante rotação.
 - `Email__Host`, `Email__Port`, `Email__UseSsl`, `Email__Username`, `Email__Password`, `Email__FromAddress` e `Email__FromName`: SMTP.
 - `Email__UseSsl=true` usa TLS direto (geralmente 465); `false` exige STARTTLS (geralmente 587). Transporte sem TLS só é permitido fora de produção, explicitamente com `Email__AllowInsecureTransport=true`.
-- `DataProtection__KeysPath`: diretório persistente das chaves que protegem o conteúdo da fila de e-mails; obrigatório em produção.
+- `DataProtection__KeysPath`: diretório persistente das chaves que protegem o conteúdo da fila de e-mails e os cookies de sessão web; obrigatório em produção.
 - `WorkforceIntegrations__Monday__Enabled`, `WorkforceIntegrations__Monday__Token`, `WorkforceIntegrations__Monday__BoardId` e `WorkforceIntegrations__Monday__ApiVersion`: leitura dos usuários ativos inscritos no board configurado.
 - `WorkforceIntegrations__VrMais__Enabled` e `WorkforceIntegrations__VrMais__Token`: leitura do cadastro de colaboradores no Ponto VR Mais.
 - `ReverseProxy__KnownProxies__0`: IP do proxy confiável. Nunca confie em cabeçalhos de IP de qualquer origem.

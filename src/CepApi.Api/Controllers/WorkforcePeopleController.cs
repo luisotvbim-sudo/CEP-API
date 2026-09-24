@@ -1,4 +1,5 @@
 using CepApi.Application;
+using CepApi.Api.Authorization;
 using CepApi.Domain;
 using CepApi.Infrastructure.Identity;
 using CepApi.Infrastructure.Persistence;
@@ -10,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 namespace CepApi.Api.Controllers;
 
 [Route("api/v1/organization/time-control/people")]
-[Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)}")]
+[Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)},{nameof(UserRole.User)}")]
 [OrganizationScope]
 public sealed class WorkforcePeopleController(
     AppDbContext db,
@@ -19,21 +20,27 @@ public sealed class WorkforcePeopleController(
     IEmailQueue emailQueue,
     IRegistrationEmailPolicy registrationEmailPolicy,
     IClock clock,
-    IAuditService audit) : ApiControllerBase
+    IAuditService audit,
+    OrganizationScopeService organizationScope,
+    TimeControlAccessService accessService) : ApiControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PagedResponse<WorkforcePersonResponse>>> List(
         [FromQuery] string? search,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var organizationId = RequireOrganizationId();
-        page = Math.Max(1, page);
-        pageSize = Math.Clamp(pageSize, 1, 200);
+        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var access = await accessService.ResolveAsync(
+            scopedOrganizationId, CurrentUserId, CurrentRole, cancellationToken);
+        (page, pageSize) = NormalizePage(page, pageSize, 200);
         var query = db.WorkforcePeople.AsNoTracking()
             .Include(x => x.MondayIdentity).Include(x => x.VrMaisIdentity)
-            .Where(x => x.OrganizationId == organizationId);
+            .Where(x => x.OrganizationId == scopedOrganizationId);
+        if (!access.HasFullAccess)
+            query = query.Where(x => x.UserId != null && access.VisibleUserIds.Contains(x.UserId.Value));
         if (!string.IsNullOrWhiteSpace(search))
         {
             var value = search.Trim().ToLower();
@@ -55,8 +62,10 @@ public sealed class WorkforcePeopleController(
     }
 
     [HttpPost("invitations")]
+    [Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)}")]
     public async Task<ActionResult<InviteWorkforcePersonResponse>> Invite(
         InviteWorkforcePersonRequest request,
+        [FromQuery] Guid? organizationId,
         CancellationToken cancellationToken)
     {
         if (request.MondayIdentityId == Guid.Empty || request.VrMaisIdentityId == Guid.Empty)
@@ -66,15 +75,15 @@ public sealed class WorkforcePeopleController(
         if (!await registrationEmailPolicy.IsAllowedAsync(request.Email, cancellationToken))
             return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
 
-        var organizationId = RequireOrganizationId();
+        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await db.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT \"Id\" FROM organizations WHERE \"Id\" = {organizationId} FOR UPDATE", cancellationToken);
-        var organization = await db.Organizations.SingleAsync(x => x.Id == organizationId, cancellationToken);
+            $"SELECT \"Id\" FROM organizations WHERE \"Id\" = {scopedOrganizationId} FOR UPDATE", cancellationToken);
+        var organization = await db.Organizations.SingleAsync(x => x.Id == scopedOrganizationId, cancellationToken);
         if (organization.Status != OrganizationStatus.Active)
             return ApiProblem(StatusCodes.Status403Forbidden, "Organization is not active.", "organization_inactive");
 
-        var identities = await db.ExternalWorkforceIdentities.Where(x => x.OrganizationId == organizationId &&
+        var identities = await db.ExternalWorkforceIdentities.Where(x => x.OrganizationId == scopedOrganizationId &&
                 (x.Id == request.MondayIdentityId || x.Id == request.VrMaisIdentityId))
             .ToListAsync(cancellationToken);
         var monday = identities.SingleOrDefault(x => x.Id == request.MondayIdentityId &&
@@ -98,7 +107,7 @@ public sealed class WorkforcePeopleController(
         var now = clock.UtcNow;
         var person = new WorkforcePerson
         {
-            OrganizationId = organizationId,
+            OrganizationId = scopedOrganizationId,
             DisplayName = request.DisplayName.Trim(),
             Email = normalizedEmail,
             MondayIdentityId = monday.Id,
@@ -111,7 +120,7 @@ public sealed class WorkforcePeopleController(
         var code = codeService.GenerateInvitationCode();
         var invitation = new Invitation
         {
-            OrganizationId = organizationId,
+            OrganizationId = scopedOrganizationId,
             WorkforcePersonId = person.Id,
             Email = normalizedEmail,
             Role = UserRole.User,
@@ -122,7 +131,7 @@ public sealed class WorkforcePeopleController(
         };
         db.Invitations.Add(invitation);
         emailQueue.Invitation(request.Email.Trim(), organization.Name, code, invitation.ExpiresAt);
-        await audit.WriteAsync("time_control.workforce_person_invited", organizationId, CurrentUserId,
+        await audit.WriteAsync("time_control.workforce_person_invited", scopedOrganizationId, CurrentUserId,
             details: new
             {
                 workforcePersonId = person.Id,
@@ -133,13 +142,10 @@ public sealed class WorkforcePeopleController(
             }, ipAddress: IpAddress, cancellationToken: cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        var invitationResponse = ToInvitationResponse(invitation);
-        return CreatedAtAction(nameof(List), new InviteWorkforcePersonResponse(
+        var invitationResponse = invitation.ToInvitationResponse();
+        return CreatedAtAction(nameof(List), new { organizationId = scopedOrganizationId }, new InviteWorkforcePersonResponse(
             ToResponse(person, invitation, monday, vrMais), invitationResponse));
     }
-
-    private Guid RequireOrganizationId()
-        => CurrentOrganizationId ?? throw new InvalidOperationException("An organization claim is required.");
 
     private static WorkforcePersonResponse ToResponse(WorkforcePerson person, Invitation? invitation)
         => ToResponse(person, invitation, person.MondayIdentity, person.VrMaisIdentity);
@@ -159,7 +165,4 @@ public sealed class WorkforcePeopleController(
         => new(identity.Id, identity.Source, identity.ExternalId, identity.DisplayName, identity.Email,
             identity.IsActive, identity.LastSeenAt, workforcePersonId);
 
-    private static InvitationResponse ToInvitationResponse(Invitation invitation)
-        => new(invitation.Id, invitation.Email, invitation.Role, invitation.CanUseRevit, invitation.CanUseZwcad,
-            invitation.ExpiresAt, invitation.AcceptedAt, invitation.RevokedAt);
 }
