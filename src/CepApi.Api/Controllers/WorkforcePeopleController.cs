@@ -12,6 +12,7 @@ namespace CepApi.Api.Controllers;
 
 [Route("api/v1/organization/time-control/people")]
 [Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)},{nameof(UserRole.User)}")]
+[OrganizationScope]
 public sealed class WorkforcePeopleController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,

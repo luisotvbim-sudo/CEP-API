@@ -10,6 +10,7 @@ namespace CepApi.Api.Controllers;
 
 [Route("api/v1/organization/time-control/history")]
 [Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)},{nameof(UserRole.User)}")]
+[OrganizationScope]
 public sealed class WorkforceHistoryController(
     AppDbContext db,
     IClock clock,

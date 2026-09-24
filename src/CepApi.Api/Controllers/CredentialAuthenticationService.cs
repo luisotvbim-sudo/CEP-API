@@ -17,7 +17,8 @@ public sealed class CredentialAuthenticationService(
     public async Task<TokenResponse> AuthenticateAsync(
         LoginRequest request,
         string? ipAddress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool web = false)
     {
         var normalizedEmail = userManager.NormalizeEmail(request.Email);
         var userId = await db.Users.AsNoTracking()
@@ -50,7 +51,7 @@ public sealed class CredentialAuthenticationService(
             throw InvalidCredentials();
         }
 
-        var response = await sessionService.CreateAsync(user, request.Client, ipAddress, cancellationToken);
+        var response = await sessionService.CreateAsync(user, request.Client, ipAddress, cancellationToken, web);
         await audit.WriteAsync("auth.login_succeeded", user.OrganizationId, user.Id, user.Id,
             new { client = request.Client?.Type ?? "unknown" }, ipAddress, cancellationToken);
         await transaction.CommitAsync(cancellationToken);

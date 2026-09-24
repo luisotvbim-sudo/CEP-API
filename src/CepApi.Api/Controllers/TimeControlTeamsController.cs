@@ -10,6 +10,7 @@ namespace CepApi.Api.Controllers;
 
 [Route("api/v1/organization/time-control/teams")]
 [Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)},{nameof(UserRole.User)}")]
+[OrganizationScope]
 public sealed class TimeControlTeamsController(
     AppDbContext db,
     IClock clock,

@@ -10,6 +10,7 @@ namespace CepApi.Api.Controllers;
 
 [Route("api/v1/organization/time-control")]
 [Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)},{nameof(UserRole.User)}")]
+[OrganizationScope]
 public sealed class WorkforceDirectoryController(
     AppDbContext db,
     IWorkforceDirectorySyncService syncService,

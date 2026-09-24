@@ -18,7 +18,8 @@ public sealed class AuthenticationSessionService(
         ApplicationUser user,
         ClientInfo? client,
         string? ipAddress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool web = false)
     {
         var now = clock.UtcNow;
         var refreshToken = tokenService.CreateRefreshToken();
@@ -26,12 +27,12 @@ public sealed class AuthenticationSessionService(
         {
             UserId = user.Id,
             TokenHash = tokenService.HashRefreshToken(refreshToken),
-            ClientType = Truncate(client?.Type ?? "unknown", 50)!,
+            ClientType = web ? "cep-horas-browser" : Truncate(client?.Type ?? "unknown", 50)!,
             ClientVersion = Truncate(client?.Version, 50),
             InstallationId = Truncate(client?.InstallationId, 200),
             IpAddress = ipAddress,
             CreatedAt = now,
-            ExpiresAt = now.AddDays(jwtOptions.Value.RefreshTokenDays)
+            ExpiresAt = now.AddDays(web ? Math.Min(7, jwtOptions.Value.RefreshTokenDays) : jwtOptions.Value.RefreshTokenDays)
         };
         db.RefreshSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);

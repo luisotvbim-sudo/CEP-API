@@ -4,6 +4,8 @@ Backend multiempresa para administrar usuários dos plugins Revit e ZWCAD e a ap
 
 ## Recursos
 
+A sessão web do CEP Horas pode persistir por até sete dias usando cookie HttpOnly. Consulte o [contrato de sessão do navegador](docs/browser-sessions.md) antes de configurar o proxy ou integrar o frontend.
+
 - Organizações isoladas, com estados ativo, suspenso e arquivado.
 - Papéis `SystemAdmin`, `OrganizationAdmin` e `User`.
 - Convites e recuperação de senha por SMTP, sem cadastro público.

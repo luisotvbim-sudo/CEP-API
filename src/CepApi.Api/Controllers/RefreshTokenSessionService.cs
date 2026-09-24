@@ -98,7 +98,9 @@ public sealed class RefreshTokenSessionService(
             InstallationId = session.InstallationId,
             IpAddress = ipAddress,
             CreatedAt = now,
-            ExpiresAt = now.AddDays(jwtOptions.Value.RefreshTokenDays)
+            ExpiresAt = session.ClientType == "cep-horas-browser"
+                ? session.ExpiresAt
+                : now.AddDays(jwtOptions.Value.RefreshTokenDays)
         };
 
     private async Task RevokeReusedFamilyAsync(

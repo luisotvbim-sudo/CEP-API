@@ -13,6 +13,7 @@ public sealed record AuditEventResponse(Guid Id, Guid? OrganizationId, Guid? Act
 
 [Route("api/v1/organization/audit")]
 [Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)}")]
+[OrganizationScope]
 public sealed class AuditController(
     AppDbContext db,
     OrganizationScopeService organizationScope) : ApiControllerBase

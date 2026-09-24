@@ -10,8 +10,18 @@ namespace CepApi.Api.Controllers;
 public sealed class AuthController(
     CredentialAuthenticationService credentialAuthentication,
     RefreshTokenSessionService refreshSessions,
-    WebSessionCookieService webCookie) : ApiControllerBase
+    WebSessionCookie webCookie) : ApiControllerBase
 {
+    private bool ValidateWebRequest()
+    {
+        Response.Headers.CacheControl = "no-store";
+        return webCookie.IsAllowed(Request);
+    }
+
+    private ObjectResult InvalidWebRequest()
+        => ApiProblem(StatusCodes.Status403Forbidden,
+            "Same-origin browser request required.", "web_origin_invalid");
+
     [HttpPost("login")]
     [EnableRateLimiting("login")]
     public async Task<ActionResult<TokenResponse>> Login(
@@ -43,10 +53,10 @@ public sealed class AuthController(
         LoginRequest request,
         CancellationToken cancellationToken)
     {
-        webCookie.ValidateRequest(Request);
+        if (!ValidateWebRequest()) return InvalidWebRequest();
         var tokens = await credentialAuthentication.AuthenticateAsync(
-            request, IpAddress, cancellationToken);
-        webCookie.Write(Response, tokens.RefreshToken, tokens.RefreshTokenExpiresAt);
+            request, IpAddress, cancellationToken, web: true);
+        webCookie.Write(HttpContext, tokens);
         return Ok(ToWebResponse(tokens));
     }
 
@@ -54,38 +64,36 @@ public sealed class AuthController(
     [EnableRateLimiting("auth")]
     public async Task<ActionResult<WebSessionResponse>> WebRefresh(CancellationToken cancellationToken)
     {
-        webCookie.ValidateRequest(Request);
-        var refreshToken = webCookie.Read(Request);
+        if (!ValidateWebRequest()) return InvalidWebRequest();
+        var cookie = webCookie.Read(Request);
+        if (cookie is null)
+        {
+            webCookie.Clear(HttpContext);
+            return ApiProblem(StatusCodes.Status401Unauthorized,
+                "Browser session expired.", "session_expired");
+        }
         try
         {
-            var tokens = await refreshSessions.RotateAsync(refreshToken, IpAddress, cancellationToken);
-            webCookie.Write(Response, tokens.RefreshToken, tokens.RefreshTokenExpiresAt);
+            var tokens = await refreshSessions.RotateAsync(cookie.RefreshToken, IpAddress, cancellationToken);
+            webCookie.Write(HttpContext, tokens);
             return Ok(ToWebResponse(tokens));
         }
         catch (ApiProblemException exception) when (exception.StatusCode == StatusCodes.Status401Unauthorized)
         {
-            webCookie.Delete(Response);
+            webCookie.Clear(HttpContext);
             throw;
         }
     }
 
     [HttpPost("web/logout")]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> WebLogout(CancellationToken cancellationToken)
     {
-        webCookie.ValidateRequest(Request);
-        try
-        {
-            var refreshToken = webCookie.Read(Request);
-            await refreshSessions.LogoutAsync(refreshToken, IpAddress, cancellationToken);
-        }
-        catch (ApiProblemException exception) when (exception.Code == "session_expired")
-        {
-            // Logout remains idempotent when the browser no longer has a valid session cookie.
-        }
-        finally
-        {
-            webCookie.Delete(Response);
-        }
+        if (!ValidateWebRequest()) return InvalidWebRequest();
+        if (webCookie.Read(Request, allowExpired: true) is { } cookie)
+            await refreshSessions.LogoutAsync(cookie.RefreshToken, IpAddress, cancellationToken);
+        webCookie.Clear(HttpContext);
         return NoContent();
     }
 

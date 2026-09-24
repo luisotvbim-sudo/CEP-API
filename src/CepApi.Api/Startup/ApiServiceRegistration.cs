@@ -19,7 +19,7 @@ internal static class ApiServiceRegistration
         builder.Services.AddScoped<AuthenticationSessionService>();
         builder.Services.AddScoped<CredentialAuthenticationService>();
         builder.Services.AddScoped<RefreshTokenSessionService>();
-        builder.Services.AddScoped<WebSessionCookieService>();
+        builder.Services.AddScoped<WebSessionCookie>();
         builder.Services.AddScoped<OrganizationScopeService>();
         builder.Services.AddScoped<TimeControlAccessService>();
         builder.Services.AddControllers().AddJsonOptions(options =>
@@ -44,6 +44,7 @@ internal static class ApiServiceRegistration
         builder.Services.AddSwaggerGen(options =>
         {
             options.SwaggerDoc("v1", new OpenApiInfo { Title = "CEP API", Version = "v1" });
+            options.OperationFilter<OrganizationScopeOperationFilter>();
             options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 Name = "Authorization",
