@@ -1,5 +1,7 @@
 # Conciliação de horas — especificação funcional do produto
 
+> Regras aprovadas em 29/09/2026: [contrato de análises e notificações](contrato-analises-notificacoes.md). Para rotas implementadas, arquitetura e limites desta entrega, consultar [análises e notificações](../time-notifications.md). A configuração passa a ser global, com tolerância inicial simétrica de 30 minutos.
+
 Versão 1.1 · 23/09/2026 · Fonte de verdade funcional para produto e engenharia
 
 **Status: produto em construção.** Este documento consolida a visão do CEP Horas, registra o que já existe no backend e diferencia explicitamente capacidades entregues, parciais e planejadas. O [manual de uso proposto](manual.html) descreve a experiência esperada com dados fictícios; ele não comprova que uma funcionalidade esteja implementada.

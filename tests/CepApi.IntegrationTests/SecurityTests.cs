@@ -209,6 +209,7 @@ public sealed class SecurityFixture : IAsyncLifetime
             builder.UseEnvironment("Development");
             builder.UseSetting("ConnectionStrings:Postgres", _postgres.GetConnectionString());
             builder.UseSetting("EmailOutbox:Enabled", "false");
+            builder.UseSetting("TimeNotifications:WorkerEnabled", "false");
             builder.UseSetting("RateLimiting:AuthPerMinute", "1000");
             builder.UseSetting("RateLimiting:LoginPerMinute", "1000");
             builder.UseSetting("RateLimiting:RecoveryRequestsPer15Minutes", "1000");

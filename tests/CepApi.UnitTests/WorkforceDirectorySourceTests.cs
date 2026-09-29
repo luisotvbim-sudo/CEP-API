@@ -10,6 +10,39 @@ namespace CepApi.UnitTests;
 public sealed class WorkforceDirectorySourceTests
 {
     [Fact]
+    public async Task Monday_analysis_fetch_includes_overlapping_and_running_sessions_without_changing_ingestion_dates()
+    {
+        using var client = new HttpClient(new JsonHandler(request =>
+        {
+            var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (body.Contains("hierarchy_type", StringComparison.Ordinal))
+                return """
+                    {"data":{"boards":[{"id":"9920862624","hierarchy_type":"multi_level",
+                    "columns":[{"id":"professional","title":"PROFISSIONAL","type":"people","settings":null}]}]}}
+                    """;
+            return """
+                {"data":{"boards":[{"id":"9920862624","items_page":{"cursor":null,"items":[{
+                  "id":"item-1","column_values":[
+                    {"id":"professional","persons_and_teams":[{"id":"1","kind":"person"}]},
+                    {"id":"time","running":true,"started_at":"2026-09-18T12:00:00Z","history":[
+                      {"id":"overlap","status":"STOPPED","started_at":"2026-09-20T02:00:00Z","ended_at":"2026-09-20T04:00:00Z"},
+                      {"id":"boundary","status":"STOPPED","started_at":"2026-09-20T01:00:00Z","ended_at":"2026-09-20T03:00:00Z"},
+                      {"id":"running","status":"ACTIVE","started_at":"2026-09-18T12:00:00Z","ended_at":null},
+                      {"id":"old","status":"STOPPED","started_at":"2026-09-18T12:00:00Z","ended_at":"2026-09-18T13:00:00Z"}
+                    ]}]}]}}]}}
+                """;
+        }));
+        var source = new MondayDirectorySource(client, Options.Create(OptionsValue()));
+        var from = new DateOnly(2026, 9, 20);
+        var analysis = await source.FetchIncludingOverlapAsync(from, from, ["1"], TestContext.Current.CancellationToken);
+        Assert.Equal(2, analysis.Records.Count);
+        Assert.Contains(analysis.Records, x => x.ExternalKey.EndsWith(":running", StringComparison.Ordinal) && x.WorkDate == new DateOnly(2026, 9, 18));
+        Assert.Contains(analysis.Records, x => x.ExternalKey.EndsWith(":overlap", StringComparison.Ordinal) && x.WorkDate == new DateOnly(2026, 9, 19));
+        var ingestion = await ((IExternalWorkforceTimeSource)source).FetchAsync(from, from, ["1"], TestContext.Current.CancellationToken);
+        Assert.Empty(ingestion.Records);
+    }
+
+    [Fact]
     public async Task Monday_directory_keeps_active_professionals_even_when_they_are_not_board_subscribers()
     {
         using var client = new HttpClient(new JsonHandler(request =>
@@ -231,6 +264,14 @@ public sealed class WorkforceDirectorySourceTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal("item-2:time:session-2", Assert.Single(result.Records).ExternalKey);
+        Assert.True(result.Complete);
+        var analysis = await source.FetchIncludingOverlapAsync(new DateOnly(2026, 9, 20), new DateOnly(2026, 9, 20),
+            ["1"], TestContext.Current.CancellationToken);
+        Assert.Equal(startedAt.StartsWith("2026-03", StringComparison.Ordinal), analysis.Complete);
+        Assert.Equal("item-2:time:session-2", Assert.Single(analysis.Records).ExternalKey);
+        var unrelated = await source.FetchIncludingOverlapAsync(new DateOnly(2026, 9, 20), new DateOnly(2026, 9, 20),
+            ["3"], TestContext.Current.CancellationToken);
+        Assert.True(unrelated.Complete);
     }
 
     [Fact]
