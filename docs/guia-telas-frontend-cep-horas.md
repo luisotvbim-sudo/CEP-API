@@ -234,3 +234,6 @@ Para esses novos contratos, preservar a regra transversal: **todo card, tabela, 
 ## 10. Prompt de transferência para o agente do `CEP-FRONT`
 
 > Implemente o front do CEP Horas conforme `CEP-API/docs/guia-telas-frontend-cep-horas.md` e a especificação funcional do produto. Antes de alterar código, leia `CEP-FRONT/AGENTS.md`, `docs/produto/especificacao-funcional.md`, `docs/compatibilidade-backend.md`, `README.md` e o snapshot OpenAPI real. A branch atual do backend tem consulta/histórico bruto, escopo de Membro/Líder/Coordenador e sincronização normal de 7 dias com persistência idempotente e retenção de 90 dias; **não** oferece conciliação oficial, saldo, notificações ou relatórios. Corrija primeiro a documentação/UI que ainda diz 60 dias e implemente as telas funcionais possíveis agora sem inventar endpoints. Mantenha o front web e o host WPF/WebView2 seguros, preserve o cliente de autenticação, escreva testes de escopo/estados e valide lint, testes, build e desktop. Para telas bloqueadas por backend, entregue a especificação e registre a dependência, sem números fictícios em produção.
+# Ativação de convite
+
+O primeiro acesso agora tem [contrato de ativação de convite](invitation-activation.md), com formulário, link de e-mail e endpoint sem tokens. A implementação está na branch `codex/invitation-activation`, ainda sem publicação em produção.

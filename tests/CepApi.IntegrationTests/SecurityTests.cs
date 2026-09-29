@@ -25,6 +25,36 @@ public sealed class SecurityTests(SecurityFixture fixture) : IClassFixture<Secur
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task Invitation_activation_creates_account_without_session_and_cannot_be_replayed()
+    {
+        var admin = await fixture.CreateUserAsync(UserRole.SystemAdmin);
+        using var client = fixture.Client();
+        var tokens = await fixture.LoginAsync(client, admin.Email!);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+        var email = $"activation-{Guid.NewGuid():N}@example.test";
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync("/api/v1/admin/organizations",
+            new CreateOrganizationRequest("Activation Test", Guid.NewGuid().ToString("N"), email, [Product.Revit]), Ct)).StatusCode);
+        await fixture.DispatchAsync();
+        client.DefaultRequestHeaders.Authorization = null;
+        var request = new AcceptInvitationRequest(email, fixture.Email.InvitationCodes[email], "Invited Person", SecurityFixture.Password, null);
+        var invalid = await client.PostAsJsonAsync("/api/v1/auth/invitations/activate", request with { Code = "wrong" }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        var accepted = await client.PostAsJsonAsync("/api/v1/auth/invitations/activate", request, Ct);
+        Assert.Equal(HttpStatusCode.NoContent, accepted.StatusCode);
+        Assert.Empty(await accepted.Content.ReadAsStringAsync(Ct));
+        Assert.False(accepted.Headers.Contains("Set-Cookie"));
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var user = await db.Users.SingleAsync(x => x.Email == email, Ct);
+            Assert.True(user.EmailConfirmed);
+            Assert.False(await db.RefreshSessions.AnyAsync(x => x.UserId == user.Id, Ct));
+        }
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/invitations/activate", request, Ct)).StatusCode);
+        Assert.NotNull(await fixture.LoginAsync(client, email));
+    }
+
+    [Fact]
     public async Task Repeated_reset_requests_keep_the_current_code_and_recovery_revokes_old_access()
     {
         var user = await fixture.CreateUserAsync();
