@@ -46,6 +46,40 @@ public sealed class SecurityTests(SecurityFixture fixture) : IClassFixture<Secur
     }
 
     [Fact]
+    public async Task Successful_password_reset_unlocks_account_after_failed_logins()
+    {
+        var user = await fixture.CreateUserAsync();
+        using var client = fixture.Client();
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var response = await client.PostAsJsonAsync("/api/v1/auth/login",
+                new LoginRequest(user.Email!, "incorrect password", new ClientInfo("test")), Ct);
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var lockedUser = await scope.ServiceProvider.GetRequiredService<AppDbContext>()
+                .Users.AsNoTracking().SingleAsync(x => x.Id == user.Id, Ct);
+            Assert.True(lockedUser.LockoutEnd > DateTimeOffset.UtcNow);
+        }
+
+        var code = await fixture.ResetCodeAsync(client, user.Email!);
+        var reset = await client.PostAsJsonAsync("/api/v1/auth/password/reset",
+            new ResetPasswordRequest(user.Email!, code, SecurityFixture.NewPassword), Ct);
+        Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var recoveredUser = await scope.ServiceProvider.GetRequiredService<AppDbContext>()
+                .Users.AsNoTracking().SingleAsync(x => x.Id == user.Id, Ct);
+            Assert.Null(recoveredUser.LockoutEnd);
+            Assert.Equal(0, recoveredUser.AccessFailedCount);
+        }
+        await fixture.LoginAsync(client, user.Email!, SecurityFixture.NewPassword);
+    }
+
+    [Fact]
     public async Task Password_change_revokes_other_sessions_and_pending_reset_codes()
     {
         var user = await fixture.CreateUserAsync();

@@ -93,6 +93,13 @@ public sealed class PasswordRecoveryController(
             { Extensions = { ["code"] = "invalid_password" } });
         }
 
+        var unlockResult = await userManager.SetLockoutEndDateAsync(user, null);
+        if (!unlockResult.Succeeded)
+            throw new InvalidOperationException("Could not clear account lockout after password reset.");
+        var resetFailuresResult = await userManager.ResetAccessFailedCountAsync(user);
+        if (!resetFailuresResult.Succeeded)
+            throw new InvalidOperationException("Could not clear failed login attempts after password reset.");
+
         await db.InvalidateResetCodesAsync(user.Id, now, cancellationToken);
         await sessionService.RevokeAllAsync(user.Id, "password_reset", cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
