@@ -28,6 +28,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        TimeNotificationModel.Configure(builder);
 
         builder.Entity<AllowedEmailDomain>(entity =>
         {

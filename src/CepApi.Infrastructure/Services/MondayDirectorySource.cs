@@ -8,7 +8,7 @@ namespace CepApi.Infrastructure.Services;
 
 public sealed class MondayDirectorySource(
     HttpClient httpClient,
-    IOptions<WorkforceIntegrationOptions> options) : IExternalWorkforceDirectorySource, IExternalWorkforceTimeSource
+    IOptions<WorkforceIntegrationOptions> options) : IExternalWorkforceDirectorySource, IExternalWorkforceOverlapTimeSource
 {
     private const string BoardSchemaQuery = """
         query ($ids: [ID!]!) {
@@ -157,29 +157,38 @@ public sealed class MondayDirectorySource(
                 .OrderBy(user => user.DisplayName).ToArray(), true);
     }
 
-    async Task<ExternalWorkforceTimeSnapshot> IExternalWorkforceTimeSource.FetchAsync(
+    Task<ExternalWorkforceTimeSnapshot> IExternalWorkforceTimeSource.FetchAsync(
         DateOnly from,
         DateOnly to,
         IReadOnlyCollection<string> activeExternalIdentityIds,
         CancellationToken cancellationToken)
+        => FetchTimeAsync(from, to, activeExternalIdentityIds, false, cancellationToken);
+
+    public Task<ExternalWorkforceTimeSnapshot> FetchIncludingOverlapAsync(DateOnly from, DateOnly to,
+        IReadOnlyCollection<string> activeExternalIdentityIds, CancellationToken cancellationToken)
+        => FetchTimeAsync(from, to, activeExternalIdentityIds, true, cancellationToken);
+
+    private async Task<ExternalWorkforceTimeSnapshot> FetchTimeAsync(DateOnly from, DateOnly to,
+        IReadOnlyCollection<string> activeExternalIdentityIds, bool includeOverlap, CancellationToken cancellationToken)
     {
         if (activeExternalIdentityIds.Count == 0)
             return new ExternalWorkforceTimeSnapshot(from, to, [], true);
         var settings = ValidateSettings();
         var allowedUsers = activeExternalIdentityIds.ToHashSet(StringComparer.Ordinal);
         var records = new Dictionary<string, ExternalWorkforceTimeRecordSnapshot>(StringComparer.Ordinal);
+        var quality = new AnalysisQuality();
         var now = DateTimeOffset.UtcNow;
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
 
         var boards = await LoadBoardSchemasAsync(settings, cancellationToken);
         var subitemBoards = boards.Skip(1).ToDictionary(board => board.Id, StringComparer.Ordinal);
         await FetchBoardTimeAsync(settings, boards.First(), subitemBoards, allowedUsers, from, to, now, timeZone,
-            records, cancellationToken);
+            records, includeOverlap, quality, cancellationToken);
         foreach (var board in subitemBoards.Values.Where(board => board.ResponsibleColumnId is not null))
             await FetchBoardTimeAsync(settings, board, subitemBoards, allowedUsers, from, to, now, timeZone,
-                records, cancellationToken);
+                records, includeOverlap, quality, cancellationToken);
 
-        return new ExternalWorkforceTimeSnapshot(from, to, records.Values.ToArray(), true);
+        return new ExternalWorkforceTimeSnapshot(from, to, records.Values.ToArray(), !includeOverlap || !quality.HasRelevantAmbiguity);
     }
 
     private async Task FetchBoardTimeAsync(
@@ -192,6 +201,8 @@ public sealed class MondayDirectorySource(
         DateTimeOffset now,
         TimeZoneInfo timeZone,
         IDictionary<string, ExternalWorkforceTimeRecordSnapshot> records,
+        bool includeOverlap,
+        AnalysisQuality quality,
         CancellationToken cancellationToken)
     {
         var cursors = new HashSet<string>(StringComparer.Ordinal);
@@ -224,7 +235,7 @@ public sealed class MondayDirectorySource(
             foreach (var item in items.EnumerateArray())
             {
                 var assignment = ExtractTimeRecords(item, board.ResponsibleColumnId, null, allowedUsers,
-                    from, to, now, timeZone, records);
+                    from, to, now, timeZone, records, includeOverlap, quality);
                 if (board.Id != settings.BoardId.Trim() ||
                     !item.TryGetProperty("subitems", out var subitems) ||
                     subitems.ValueKind != JsonValueKind.Array)
@@ -237,7 +248,7 @@ public sealed class MondayDirectorySource(
                         subitemBoards.TryGetValue(subitemBoardId, out var schema)
                         ? schema.ResponsibleColumnId : null;
                     ExtractTimeRecords(subitem, subitemColumnId, assignment, allowedUsers,
-                        from, to, now, timeZone, records);
+                        from, to, now, timeZone, records, includeOverlap, quality);
                 }
             }
 
@@ -444,7 +455,9 @@ public sealed class MondayDirectorySource(
         DateOnly to,
         DateTimeOffset now,
         TimeZoneInfo timeZone,
-        IDictionary<string, ExternalWorkforceTimeRecordSnapshot> records)
+        IDictionary<string, ExternalWorkforceTimeRecordSnapshot> records,
+        bool includeOverlap,
+        AnalysisQuality quality)
     {
         var itemId = ReadString(item, "id") ?? string.Empty;
         var itemName = ReadString(item, "name");
@@ -468,7 +481,7 @@ public sealed class MondayDirectorySource(
                 .Where(id => id is not null).Distinct(StringComparer.Ordinal).ToArray() : [];
             var assignment = responsibleIds.Length switch
             {
-                > 1 => new ResponsibleAssignment(null, true),
+                > 1 => new ResponsibleAssignment(null, true, responsibleIds.Any(id => id is not null && allowedUsers.Contains(id))),
                 1 => new ResponsibleAssignment(responsibleIds[0], false),
                 _ => inheritedAssignment ?? new ResponsibleAssignment(null, false)
             };
@@ -493,8 +506,13 @@ public sealed class MondayDirectorySource(
                     if (endedAt is null && !running) continue;
                     var startedByUserId = ReadString(entry, "started_user_id");
                     var workDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(startedAt.Value, timeZone).DateTime);
-                    if (workDate < from || workDate > to) continue;
-                    if (assignment.Ambiguous) continue;
+                    if (workDate > to) continue;
+                    if (workDate < from && (!includeOverlap || endedAt <= TimeAnalysisEngine.StartOfDay(from))) continue;
+                    if (assignment.Ambiguous)
+                    {
+                        if (includeOverlap && assignment.RelevantAmbiguity) quality.HasRelevantAmbiguity = true;
+                        continue;
+                    }
                     var responsibleId = assignment.IdentityId;
                     if (responsibleId is null || !allowedUsers.Contains(responsibleId)) continue;
                     var historyId = ReadString(entry, "id");
@@ -520,7 +538,8 @@ public sealed class MondayDirectorySource(
     }
 
     private sealed record MondayBoardSchema(string Id, string? ResponsibleColumnId);
-    private sealed record ResponsibleAssignment(string? IdentityId, bool Ambiguous);
+    private sealed record ResponsibleAssignment(string? IdentityId, bool Ambiguous, bool RelevantAmbiguity = false);
+    private sealed class AnalysisQuality { public bool HasRelevantAmbiguity { get; set; } }
 
     private static bool IsDeleted(JsonElement entry)
         => ReadString(entry, "status")?.Contains("deleted", StringComparison.OrdinalIgnoreCase) == true;

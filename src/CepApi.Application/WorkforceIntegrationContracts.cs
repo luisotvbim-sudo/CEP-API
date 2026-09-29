@@ -134,6 +134,15 @@ public interface IExternalWorkforceTimeSource
         CancellationToken cancellationToken);
 }
 
+/// <summary>Analysis-only reads may include sessions starting before the requested window.
+/// Their original work date is preserved; do not pass these snapshots to the ingestion writer.</summary>
+public interface IExternalWorkforceOverlapTimeSource : IExternalWorkforceTimeSource
+{
+    Task<ExternalWorkforceTimeSnapshot> FetchIncludingOverlapAsync(
+        DateOnly from, DateOnly to, IReadOnlyCollection<string> activeExternalIdentityIds,
+        CancellationToken cancellationToken);
+}
+
 public interface IWorkforceDirectorySyncService
 {
     Task<WorkforceSyncBatch> SynchronizeAsync(
