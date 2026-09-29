@@ -6,7 +6,7 @@ using CepApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace CepApi.Api.Controllers;
+namespace CepApi.Api.Services;
 
 public sealed class AuthenticationSessionService(
     AppDbContext db,
@@ -41,18 +41,6 @@ public sealed class AuthenticationSessionService(
         var access = tokenService.CreateAccessToken(tokenUser, session.FamilyId, user.SecurityStamp!, now);
         return new TokenResponse(access.Token, access.ExpiresAt, refreshToken, session.ExpiresAt,
             user.ToUserResponse());
-    }
-
-    public async Task RevokeAllAsync(Guid userId, string reason, CancellationToken cancellationToken)
-    {
-        var sessions = await db.RefreshSessions
-            .Where(x => x.UserId == userId && x.RevokedAt == null)
-            .ToListAsync(cancellationToken);
-        foreach (var session in sessions)
-        {
-            session.RevokedAt = clock.UtcNow;
-            session.RevocationReason = reason;
-        }
     }
 
     private static string? Truncate(string? value, int maxLength)

@@ -116,13 +116,24 @@ dotnet run --project src/CepApi.Api -- migrate
 
 ## Desenvolvimento e testes
 
+As decisões compartilhadas ficam nestes pontos:
+
+- `src/CepApi.Api/Authorization/OrganizationScopeService.cs`: seleção e validação da organização, executadas pelo filtro `OrganizationScope` antes dos controllers.
+- `src/CepApi.Api/Services`: autenticação, sessões e ciclo de convites. A criação do convite, o e-mail na outbox e a auditoria participam da mesma transação; a reserva do e-mail serializa criações concorrentes.
+- `src/CepApi.Api/ApiProblems.cs`: formato dos erros, códigos e identificador de correlação.
+- `src/CepApi.Domain`: validade e limite de tentativas dos códigos em `SecurityCodePolicy.cs`; regras e calendário das análises em `TimeAnalysis.cs`.
+- `src/CepApi.Infrastructure/Persistence`: mapeamentos separados por contexto, locks de segurança, revogação de sessões e paginação. Alterações em mapeamentos continuam exigindo a verificação de migrations.
+- `src/CepApi.Infrastructure/Services/ExternalSourceHttp.cs`: tratamento comum das falhas HTTP de Monday e VR Mais, preservando o cancelamento solicitado pelo chamador.
+
+Os controllers coordenam a entrada HTTP; as regras compartilhadas devem ser alteradas nesses pontos para evitar decisões divergentes entre endpoints.
+
 ```bash
 dotnet build CEP-API.sln -m:1
 dotnet test tests/CepApi.UnitTests
 dotnet test tests/CepApi.IntegrationTests
 ```
 
-Os testes de integração e segurança exigem Docker e usam PostgreSQL real. Incluem recuperação, revogação, concorrência, isolamento entre organizações, retentativa de SMTP e proxy. A coleção de exemplos está em `requests/cep-api.http` e o contrato do cliente em `docs/plugin-integration.md`.
+Os testes de integração e segurança exigem Docker e usam PostgreSQL real. Incluem recuperação, revogação, concorrência de convites e administradores, isolamento entre organizações, paginação extrema, versões de agendamentos, perda de acesso antes de um disparo, rollback da outbox, entrega concorrente de e-mails, retentativa de SMTP e proxy. Os testes unitários também cobrem rotação de chaves JWT, códigos de segurança, cancelamento e falhas das fontes externas, paginação Monday e divisão de períodos VR Mais com concorrência limitada. A coleção de exemplos está em `requests/cep-api.http` e o contrato do cliente em `docs/plugin-integration.md`.
 
 Para validar a imagem, as migrations e o fluxo HTTPS com dados descartáveis (PowerShell 7):
 

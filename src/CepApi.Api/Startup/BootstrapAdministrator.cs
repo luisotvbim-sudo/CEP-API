@@ -24,7 +24,7 @@ internal static class BootstrapAdministrator
 
         var password = Required(configuration, "BootstrapAdmin:Password");
         var displayName = configuration["BootstrapAdmin:DisplayName"] ?? "System Administrator";
-        var now = DateTimeOffset.UtcNow;
+        var now = scope.ServiceProvider.GetRequiredService<IClock>().UtcNow;
         var user = new ApplicationUser
         {
             Id = Guid.CreateVersion7(),

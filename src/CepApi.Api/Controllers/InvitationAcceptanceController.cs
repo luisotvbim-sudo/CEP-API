@@ -1,3 +1,4 @@
+using CepApi.Api.Services;
 using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Identity;
@@ -50,7 +51,7 @@ public sealed class InvitationAcceptanceController(
             .Where(x => x.Email == normalizedEmail && x.AcceptedAt == null && x.RevokedAt == null)
             .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(cancellationToken);
         var now = clock.UtcNow;
-        if (invitation is null || invitation.ExpiresAt <= now || invitation.FailedAttempts >= 5 ||
+        if (invitation is null || invitation.ExpiresAt <= now || invitation.FailedAttempts >= SecurityCodePolicy.MaximumAttempts ||
             !codeService.Verify(request.Code, invitation.CodeHash))
         {
             if (invitation is not null)
@@ -95,11 +96,7 @@ public sealed class InvitationAcceptanceController(
         if (!result.Succeeded)
         {
             await transaction.RollbackAsync(cancellationToken);
-            return ValidationProblem(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["password"] = result.Errors.Select(x => x.Description).ToArray()
-            })
-            { Extensions = { ["code"] = "invalid_password" } });
+            return IdentityProblem(result, "password", "invalid_password");
         }
 
         AddProductAccesses(invitation, user.Id, now);

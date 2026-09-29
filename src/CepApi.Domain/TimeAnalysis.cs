@@ -35,8 +35,13 @@ public static class TimeAnalysisEngine
         var delta = monday.HasValue && vr.HasValue ? result.DeltaSeconds : null;
         var issues = result.Issues.Where(x => delta.HasValue || x != "above_tolerance").ToHashSet();
         if (monday is null || vr is null) issues.Add("incomplete");
-        return result with { MondaySeconds = monday, VrSeconds = vr, DeltaSeconds = delta,
-            Issues = issues.Order(StringComparer.Ordinal).ToArray() };
+        return result with
+        {
+            MondaySeconds = monday,
+            VrSeconds = vr,
+            DeltaSeconds = delta,
+            Issues = issues.Order(StringComparer.Ordinal).ToArray()
+        };
     }
 
     public static TimeZoneInfo SaoPaulo { get; } = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
@@ -70,20 +75,23 @@ public static class TimeAnalysisEngine
         if (toleranceMinutes < 0) throw new ArgumentOutOfRangeException(nameof(toleranceMinutes));
         // Snapshot retries must never count the same source session/day twice.
         var input = records.GroupBy(x => (x.Source, x.ExternalIdentityId, x.ExternalKey))
-            .Select(group => group.OrderByDescending(x => x.LastSyncedAt).First())
+            .Select(group => group.MaxBy(x => x.LastSyncedAt)!)
             .Where(x => !x.IsRemoved).ToArray();
+        var vrByDay = input.Where(x => x.Source == ExternalWorkforceSource.VrMais).ToLookup(x => x.WorkDate);
+        var mondayRows = input.Where(x => x.Source == ExternalWorkforceSource.Monday).ToArray();
+        var today = LocalDate(cutoff);
         var days = new List<TimeAnalysisDay>();
         for (var day = from; day <= to; day = day.AddDays(1))
         {
             var issues = new HashSet<string>(StringComparer.Ordinal);
-            var partial = day == LocalDate(cutoff);
+            var partial = day == today;
             var start = StartOfDay(day);
             var end = StartOfDay(day.AddDays(1));
             if (end > cutoff) end = cutoff;
-            var vrRows = input.Where(x => x.Source == ExternalWorkforceSource.VrMais && x.WorkDate == day).ToArray();
+            var vrRows = vrByDay[day].ToArray();
             long? vr = vrRows.Length == 1 ? VrSeconds(vrRows[0], day, end, partial, issues) : null;
             long? monday = 0;
-            foreach (var row in input.Where(x => x.Source == ExternalWorkforceSource.Monday))
+            foreach (var row in mondayRows)
             {
                 if (row.StartedAt is not { } began)
                 {

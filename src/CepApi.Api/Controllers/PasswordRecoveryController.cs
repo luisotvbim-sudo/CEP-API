@@ -3,7 +3,6 @@ using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Identity;
 using CepApi.Infrastructure.Persistence;
-using CepApi.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -19,7 +18,6 @@ public sealed class PasswordRecoveryController(
     UserManager<ApplicationUser> userManager,
     ISecurityCodeService codeService,
     IEmailQueue emailQueue,
-    AuthenticationSessionService sessionService,
     IClock clock,
     IAuditService audit) : ApiControllerBase
 {
@@ -64,10 +62,10 @@ public sealed class PasswordRecoveryController(
         var reset = await db.PasswordResets.AsNoTracking().Where(x => x.UserId == user.Id && x.UsedAt == null)
             .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(cancellationToken);
         var now = clock.UtcNow;
-        if (reset is null || reset.ExpiresAt <= now || reset.FailedAttempts >= 5 ||
+        if (reset is null || reset.ExpiresAt <= now || reset.FailedAttempts >= SecurityCodePolicy.MaximumAttempts ||
             !codeService.Verify(request.Code, reset.CodeHash))
         {
-            if (reset is not null && reset.ExpiresAt > now && reset.FailedAttempts < 5)
+            if (reset is not null && reset.ExpiresAt > now && reset.FailedAttempts < SecurityCodePolicy.MaximumAttempts)
             {
                 await db.PasswordResets.Where(x => x.Id == reset.Id)
                     .ExecuteUpdateAsync(setters => setters
@@ -86,11 +84,7 @@ public sealed class PasswordRecoveryController(
         var result = await userManager.ResetPasswordAsync(user, identityToken, request.NewPassword);
         if (!result.Succeeded)
         {
-            return ValidationProblem(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["newPassword"] = result.Errors.Select(x => x.Description).ToArray()
-            })
-            { Extensions = { ["code"] = "invalid_password" } });
+            return IdentityProblem(result, "newPassword", "invalid_password");
         }
 
         var unlockResult = await userManager.SetLockoutEndDateAsync(user, null);
@@ -101,7 +95,7 @@ public sealed class PasswordRecoveryController(
             throw new InvalidOperationException("Could not clear failed login attempts after password reset.");
 
         await db.InvalidateResetCodesAsync(user.Id, now, cancellationToken);
-        await sessionService.RevokeAllAsync(user.Id, "password_reset", cancellationToken);
+        await db.RevokeUserSessionsAsync(user.Id, now, "password_reset", cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await audit.WriteAsync("auth.password_reset", user.OrganizationId, user.Id, user.Id,
             ipAddress: IpAddress, cancellationToken: cancellationToken);
@@ -121,7 +115,7 @@ public sealed class PasswordRecoveryController(
             {
                 await db.InvalidateResetCodesAsync(user.Id, now, cancellationToken);
                 var code = codeService.GeneratePasswordResetCode();
-                var expiresAt = now.AddMinutes(15);
+                var expiresAt = now.Add(SecurityCodePolicy.PasswordResetLifetime);
                 db.PasswordResets.Add(new PasswordReset
                 {
                     UserId = user.Id,

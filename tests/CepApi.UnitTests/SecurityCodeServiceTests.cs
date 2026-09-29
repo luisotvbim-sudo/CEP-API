@@ -53,4 +53,23 @@ public sealed class SecurityCodeServiceTests
         Assert.Equal(8, code.Length);
         Assert.True(code.All(char.IsAsciiDigit));
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-base64")]
+    [InlineData("AA==")]
+    public void Missing_malformed_and_short_keys_are_rejected(string key)
+        => Assert.Throws<InvalidOperationException>(() => new SecurityCodeService(Options.Create(new SecurityCodeOptions { HmacKey = key })));
+
+    [Theory]
+    [InlineData("h1:invalid-base64")]
+    [InlineData("h1:AA==")]
+    [InlineData("not-hex")]
+    [InlineData("")]
+    public void Malformed_stored_hashes_fail_closed(string hash)
+        => Assert.False(_service.Verify("test-code", hash));
+
+    [Fact]
+    public void Code_verification_preserves_case_and_whitespace_normalization()
+        => Assert.True(_service.Verify("  abcd2345wxyz  ", _service.Hash("ABCD2345WXYZ")));
 }

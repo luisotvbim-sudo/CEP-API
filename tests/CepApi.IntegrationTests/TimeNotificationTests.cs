@@ -95,9 +95,15 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         var now = DateTimeOffset.Parse("2026-09-29T14:50:00Z");
         var dispatch = new TimeNotificationDispatch
         {
-            OrganizationId = admin.OrganizationId!.Value, ActorUserId = admin.Id, UserId = admin.Id,
-            DeduplicationKey = Guid.NewGuid().ToString(), RequestHash = "test", Message = "Lunch",
-            Period = AnalysisPeriod.Daily, CreatedAt = now, ToleranceMinutes = 30
+            OrganizationId = admin.OrganizationId!.Value,
+            ActorUserId = admin.Id,
+            UserId = admin.Id,
+            DeduplicationKey = Guid.NewGuid().ToString(),
+            RequestHash = "test",
+            Message = "Lunch",
+            Period = AnalysisPeriod.Daily,
+            CreatedAt = now,
+            ToleranceMinutes = 30
         };
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -117,6 +123,74 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         Assert.False(analysis.HasIssues);
     }
 
+    [Fact]
+    public async Task Schedule_versions_soft_deletion_and_duplicate_times_preserve_the_global_contract()
+    {
+        var admin = await fixture.CreateUserAsync(UserRole.OrganizationAdmin);
+        using var client = await Client(admin);
+        const string path = "/api/v1/time-control/notification-schedules";
+        var request = new TimeScheduleRequest(new TimeOnly(9, 37), " Reminder ", NotificationScheduleKind.Lunch, false);
+        var created = await client.PostAsJsonAsync(path, request, SecurityFixture.Json, Ct);
+        created.EnsureSuccessStatusCode();
+        var schedule = (await created.Content.ReadFromJsonAsync<TimeScheduleResponse>(SecurityFixture.Json, Ct))!;
+        Assert.Equal("Reminder", schedule.Message);
+        await AdministrationRegressionTests.AssertProblemAsync(await client.PostAsJsonAsync(path, request, SecurityFixture.Json, Ct),
+            HttpStatusCode.Conflict, "schedule_time_conflict");
+        await AdministrationRegressionTests.AssertProblemAsync(await client.PatchAsJsonAsync($"{path}/{schedule.Id}",
+            request with { Version = Guid.NewGuid() }, SecurityFixture.Json, Ct), HttpStatusCode.Conflict, "configuration_conflict");
+        var edited = await client.PatchAsJsonAsync($"{path}/{schedule.Id}", request with
+        {
+            Version = schedule.Version,
+            Message = "Updated"
+        }, SecurityFixture.Json, Ct);
+        edited.EnsureSuccessStatusCode();
+        var updated = (await edited.Content.ReadFromJsonAsync<TimeScheduleResponse>(SecurityFixture.Json, Ct))!;
+        Assert.NotEqual(schedule.Version, updated.Version);
+        await AdministrationRegressionTests.AssertProblemAsync(await client.DeleteAsync($"{path}/{schedule.Id}?version={schedule.Version}", Ct),
+            HttpStatusCode.Conflict, "configuration_conflict");
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"{path}/{schedule.Id}?version={updated.Version}", Ct)).StatusCode);
+        var schedules = (await client.GetFromJsonAsync<TimeScheduleResponse[]>(path, SecurityFixture.Json, Ct))!;
+        Assert.DoesNotContain(schedules, x => x.Id == schedule.Id);
+        (await client.PostAsJsonAsync(path, request, SecurityFixture.Json, Ct)).EnsureSuccessStatusCode();
+        await AdministrationRegressionTests.AssertProblemAsync(await client.PostAsJsonAsync(path,
+            request with { LocalTime = new TimeOnly(9, 38, 1) }, SecurityFixture.Json, Ct), HttpStatusCode.BadRequest, "invalid_schedule");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Pending_dispatch_is_rejected_if_organization_or_actor_loses_access(bool suspendOrganization)
+    {
+        var admin = await fixture.CreateUserAsync(UserRole.OrganizationAdmin);
+        await Associate(admin);
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var now = DateTimeOffset.Parse("2026-09-29T14:50:00Z");
+        var dispatch = new TimeNotificationDispatch
+        {
+            OrganizationId = admin.OrganizationId!.Value,
+            ActorUserId = admin.Id,
+            DeduplicationKey = Guid.NewGuid().ToString(),
+            RequestHash = "test",
+            Message = "Restricted",
+            Period = AnalysisPeriod.Daily,
+            CreatedAt = now
+        };
+        db.Add(dispatch);
+        await db.SaveChangesAsync(Ct);
+        if (suspendOrganization)
+            await db.Organizations.Where(x => x.Id == admin.OrganizationId)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, OrganizationStatus.Suspended), Ct);
+        else
+            await db.Users.Where(x => x.Id == admin.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.Role, UserRole.User), Ct);
+        await new TimeNotificationProcessor(db, new FixedClock(now),
+            [new FakeSource(ExternalWorkforceSource.Monday), new FakeSource(ExternalWorkforceSource.VrMais)]).TickAsync(Ct);
+        Assert.Equal(NotificationDispatchStatus.Failed, dispatch.Status);
+        Assert.Equal("dispatch_scope_revoked", dispatch.ErrorCode);
+        Assert.False(await db.Set<TimeAnalysisReport>().AnyAsync(x => x.DispatchId == dispatch.Id, Ct));
+        Assert.Equal(0, dispatch.RecipientCount);
+    }
+
     private async Task<HttpClient> Client(ApplicationUser user)
     {
         var client = fixture.Client();
@@ -133,9 +207,18 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         var now = DateTimeOffset.Parse("2026-09-29T14:50:00Z");
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var dispatch = new TimeNotificationDispatch { OrganizationId = admin.OrganizationId!.Value, ActorUserId = admin.Id,
-            UserId = admin.Id, DeduplicationKey = Guid.NewGuid().ToString(), RequestHash = "test", Message = "Conferência",
-            Period = AnalysisPeriod.Daily, CreatedAt = now, ToleranceMinutes = 30 };
+        var dispatch = new TimeNotificationDispatch
+        {
+            OrganizationId = admin.OrganizationId!.Value,
+            ActorUserId = admin.Id,
+            UserId = admin.Id,
+            DeduplicationKey = Guid.NewGuid().ToString(),
+            RequestHash = "test",
+            Message = "Conferência",
+            Period = AnalysisPeriod.Daily,
+            CreatedAt = now,
+            ToleranceMinutes = 30
+        };
         db.Add(dispatch);
         await db.SaveChangesAsync(Ct);
         await new TimeNotificationProcessor(db, new FixedClock(now),
@@ -181,8 +264,16 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var monday = new ExternalWorkforceIdentity { OrganizationId = user.OrganizationId!.Value, Source = ExternalWorkforceSource.Monday, ExternalId = Guid.NewGuid().ToString(), DisplayName = "Monday" };
         var vr = new ExternalWorkforceIdentity { OrganizationId = user.OrganizationId.Value, Source = ExternalWorkforceSource.VrMais, ExternalId = Guid.NewGuid().ToString(), DisplayName = "VR" };
-        var person = new WorkforcePerson { OrganizationId = user.OrganizationId.Value, UserId = user.Id, DisplayName = user.DisplayName,
-            Email = user.Email!, MondayIdentity = monday, VrMaisIdentity = vr, CreatedByUserId = user.Id };
+        var person = new WorkforcePerson
+        {
+            OrganizationId = user.OrganizationId.Value,
+            UserId = user.Id,
+            DisplayName = user.DisplayName,
+            Email = user.Email!,
+            MondayIdentity = monday,
+            VrMaisIdentity = vr,
+            CreatedByUserId = user.Id
+        };
         db.Add(person);
         await db.SaveChangesAsync(Ct);
         return person;

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using CepApi.Application;
 using CepApi.Api.Authorization;
 using CepApi.Domain;
@@ -15,7 +16,6 @@ public sealed class TimeControlTeamsController(
     AppDbContext db,
     IClock clock,
     IAuditService audit,
-    OrganizationScopeService organizationScope,
     TimeControlAccessService accessService) : ApiControllerBase
 {
     [HttpGet]
@@ -25,7 +25,7 @@ public sealed class TimeControlTeamsController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var access = await accessService.ResolveAsync(
             scopedOrganizationId, CurrentUserId, CurrentRole, cancellationToken);
         var effectiveDate = asOf ?? TimeControlCalendar.Today(clock.UtcNow);
@@ -35,16 +35,7 @@ public sealed class TimeControlTeamsController(
         if (!includeInactive)
             query = query.Where(x => x.IsActive);
 
-        var items = await query.OrderBy(x => x.Name).Select(team => new WorkforceTeamResponse(
-            team.Id,
-            team.Name,
-            team.IsActive,
-            team.Assignments.Count(x => x.Role == TeamAssignmentRole.Member &&
-                x.EffectiveFrom <= effectiveDate && (x.EffectiveTo == null || x.EffectiveTo >= effectiveDate)),
-            team.Assignments.Count(x => x.Role == TeamAssignmentRole.Manager &&
-                x.EffectiveFrom <= effectiveDate && (x.EffectiveTo == null || x.EffectiveTo >= effectiveDate)),
-            team.CreatedAt,
-            team.UpdatedAt)).ToListAsync(cancellationToken);
+        var items = await query.OrderBy(x => x.Name).Select(TeamResponse(effectiveDate)).ToListAsync(cancellationToken);
 
         return Ok(items);
     }
@@ -56,7 +47,7 @@ public sealed class TimeControlTeamsController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var access = await accessService.ResolveAsync(
             scopedOrganizationId, CurrentUserId, CurrentRole, cancellationToken);
         if (!access.CanReadTeam(teamId))
@@ -64,18 +55,7 @@ public sealed class TimeControlTeamsController(
         var effectiveDate = asOf ?? TimeControlCalendar.Today(clock.UtcNow);
         var team = await db.WorkforceTeams.AsNoTracking()
             .Where(x => x.Id == teamId && x.OrganizationId == scopedOrganizationId)
-            .Select(x => new WorkforceTeamResponse(
-                x.Id,
-                x.Name,
-                x.IsActive,
-                x.Assignments.Count(assignment => assignment.Role == TeamAssignmentRole.Member &&
-                    assignment.EffectiveFrom <= effectiveDate &&
-                    (assignment.EffectiveTo == null || assignment.EffectiveTo >= effectiveDate)),
-                x.Assignments.Count(assignment => assignment.Role == TeamAssignmentRole.Manager &&
-                    assignment.EffectiveFrom <= effectiveDate &&
-                    (assignment.EffectiveTo == null || assignment.EffectiveTo >= effectiveDate)),
-                x.CreatedAt,
-                x.UpdatedAt))
+            .Select(TeamResponse(effectiveDate))
             .SingleOrDefaultAsync(cancellationToken);
 
         return team is null
@@ -90,13 +70,13 @@ public sealed class TimeControlTeamsController(
         [FromQuery] Guid? organizationId,
         CancellationToken cancellationToken)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var name = request.Name.Trim();
         if (name.Length == 0)
             return ApiProblem(StatusCodes.Status400BadRequest, "Team name cannot be empty.", "invalid_team_name");
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await LockOrganizationAsync(scopedOrganizationId, cancellationToken);
+        await db.LockOrganizationAsync(scopedOrganizationId, cancellationToken);
         var normalizedName = NormalizeName(name);
         if (await TeamNameExistsAsync(scopedOrganizationId, normalizedName, excludedTeamId: null, cancellationToken))
             return ApiProblem(StatusCodes.Status409Conflict, "A team with this name already exists.", "team_name_unavailable");
@@ -127,13 +107,13 @@ public sealed class TimeControlTeamsController(
         [FromQuery] Guid? organizationId,
         CancellationToken cancellationToken)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var name = request.Name.Trim();
         if (name.Length == 0)
             return ApiProblem(StatusCodes.Status400BadRequest, "Team name cannot be empty.", "invalid_team_name");
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await LockOrganizationAsync(scopedOrganizationId, cancellationToken);
+        await db.LockOrganizationAsync(scopedOrganizationId, cancellationToken);
         var team = await db.WorkforceTeams.SingleOrDefaultAsync(
             x => x.Id == teamId && x.OrganizationId == scopedOrganizationId, cancellationToken);
         if (team is null)
@@ -156,10 +136,6 @@ public sealed class TimeControlTeamsController(
         return Ok(ToResponse(team));
     }
 
-    private Task LockOrganizationAsync(Guid organizationId, CancellationToken cancellationToken)
-        => db.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT \"Id\" FROM organizations WHERE \"Id\" = {organizationId} FOR UPDATE", cancellationToken);
-
     private async Task<bool> TeamNameExistsAsync(
         Guid organizationId,
         string normalizedName,
@@ -174,6 +150,14 @@ public sealed class TimeControlTeamsController(
     }
 
     private static string NormalizeName(string name) => name.Trim().ToUpperInvariant();
+
+    private static Expression<Func<WorkforceTeam, WorkforceTeamResponse>> TeamResponse(DateOnly date)
+        => team => new WorkforceTeamResponse(team.Id, team.Name, team.IsActive,
+            team.Assignments.Count(x => x.Role == TeamAssignmentRole.Member &&
+                x.EffectiveFrom <= date && (x.EffectiveTo == null || x.EffectiveTo >= date)),
+            team.Assignments.Count(x => x.Role == TeamAssignmentRole.Manager &&
+                x.EffectiveFrom <= date && (x.EffectiveTo == null || x.EffectiveTo >= date)),
+            team.CreatedAt, team.UpdatedAt);
 
     private static WorkforceTeamResponse ToResponse(WorkforceTeam team)
         => new(team.Id, team.Name, team.IsActive, 0, 0, team.CreatedAt, team.UpdatedAt);

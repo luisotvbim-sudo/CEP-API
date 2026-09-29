@@ -295,13 +295,16 @@ public sealed class SecurityFixture : IAsyncLifetime
     public HttpClient Client() => Factory.CreateClient(new WebApplicationFactoryClientOptions
     { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
 
-    public async Task<ApplicationUser> CreateUserAsync(UserRole role = UserRole.User)
+    public async Task<ApplicationUser> CreateUserAsync(UserRole role = UserRole.User, Guid? organizationId = null)
     {
         await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var organization = new Organization { Name = "Test", Slug = Guid.NewGuid().ToString("N"), CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow };
-        db.Organizations.Add(organization);
-        await db.SaveChangesAsync();
+        if (organizationId is null)
+        {
+            db.Organizations.Add(organization);
+            await db.SaveChangesAsync();
+        }
         var email = $"user-{Guid.NewGuid():N}@example.test";
         var user = new ApplicationUser
         {
@@ -312,7 +315,7 @@ public sealed class SecurityFixture : IAsyncLifetime
             DisplayName = "Security test",
             Role = role,
             Status = UserStatus.Active,
-            OrganizationId = role == UserRole.SystemAdmin ? null : organization.Id,
+            OrganizationId = role == UserRole.SystemAdmin ? null : organizationId ?? organization.Id,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
@@ -379,6 +382,36 @@ public sealed class SecurityFixture : IAsyncLifetime
         await Factory.DisposeAsync();
         await _postgres.DisposeAsync();
     }
+
+    public async Task<HttpResponseMessage[]> RunBlockedAsync(
+        Func<AppDbContext, Task> acquireLock,
+        Func<Task<HttpResponseMessage>> firstRequest,
+        Func<Task<HttpResponseMessage>> secondRequest)
+    {
+        await using var scope = Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await acquireLock(db);
+        var first = firstRequest();
+        var second = secondRequest();
+        var blocked = false;
+        try
+        {
+            for (var i = 0; i < 100; i++)
+            {
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_stat_clear_snapshot()");
+                var count = await db.Database.SqlQueryRaw<int>(
+                    "SELECT count(*)::int AS \"Value\" FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'")
+                    .SingleAsync();
+                if (count >= 2) { blocked = true; break; }
+                await Task.Delay(30);
+            }
+        }
+        finally { await transaction.CommitAsync(); }
+        var responses = await Task.WhenAll(first, second);
+        Assert.True(blocked, "Both requests must wait on the database lock before the race is released.");
+        return responses;
+    }
 }
 
 public sealed class TestEmailSender : IEmailSender
@@ -387,10 +420,12 @@ public sealed class TestEmailSender : IEmailSender
     public ConcurrentDictionary<string, string> ResetCodes { get; } = new(StringComparer.OrdinalIgnoreCase);
     public ConcurrentDictionary<string, int> PasswordResetDeliveries { get; } = new(StringComparer.OrdinalIgnoreCase);
     public ConcurrentDictionary<string, string> InvitationCodes { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public ConcurrentDictionary<string, int> InvitationDeliveries { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Task SendInvitationAsync(string email, string organizationName, string code, DateTimeOffset expiresAt, CancellationToken cancellationToken)
     {
         if (Fail) throw new IOException("Simulated SMTP failure");
         InvitationCodes[email] = code;
+        InvitationDeliveries.AddOrUpdate(email, 1, (_, count) => count + 1);
         return Task.CompletedTask;
     }
     public Task SendPasswordResetAsync(string email, string code, DateTimeOffset expiresAt, CancellationToken cancellationToken)

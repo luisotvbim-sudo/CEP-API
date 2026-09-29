@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Net.Http.Json;
 using System.Text.Json;
 using CepApi.Application;
@@ -205,33 +206,11 @@ public sealed class MondayDirectorySource(
         AnalysisQuality quality,
         CancellationToken cancellationToken)
     {
-        var cursors = new HashSet<string>(StringComparer.Ordinal);
-        string? cursor = null;
         var people = allowedUsers.Select(id => $"person-{id}").ToArray();
-
-        for (var page = 0; page < 500; page++)
+        await foreach (var items in ReadItemPagesAsync(settings, FirstTimePageQuery,
+            new { ids = new[] { board.Id }, responsibleColumn = board.ResponsibleColumnId, people },
+            NextTimePageQuery, cancellationToken))
         {
-            using var document = page == 0
-                ? await QueryAsync(settings, FirstTimePageQuery,
-                    new { ids = new[] { board.Id }, responsibleColumn = board.ResponsibleColumnId, people },
-                    cancellationToken)
-                : await QueryAsync(settings, NextTimePageQuery, new { cursor = cursor! }, cancellationToken);
-            var data = document.RootElement.GetProperty("data");
-            JsonElement pageData;
-            if (page == 0)
-            {
-                var boards = data.GetProperty("boards");
-                if (boards.GetArrayLength() != 1)
-                    throw new ExternalDirectoryException("monday_board_unavailable", "The configured Monday board is not available.");
-                pageData = boards[0].GetProperty("items_page");
-            }
-            else
-            {
-                pageData = data.GetProperty("next_items_page");
-            }
-
-            if (!pageData.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
-                throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the board items.");
             foreach (var item in items.EnumerateArray())
             {
                 var assignment = ExtractTimeRecords(item, board.ResponsibleColumnId, null, allowedUsers,
@@ -252,14 +231,7 @@ public sealed class MondayDirectorySource(
                 }
             }
 
-            cursor = ReadString(pageData, "cursor");
-            if (string.IsNullOrWhiteSpace(cursor))
-                return;
-            if (!cursors.Add(cursor))
-                throw new ExternalDirectoryException("monday_pagination_repeated", "Monday repeated a pagination cursor.");
         }
-
-        throw new ExternalDirectoryException("monday_pagination_limit", "Monday item pagination exceeded the supported limit.");
     }
 
     private async Task FetchAssignedUserIdsAsync(
@@ -268,32 +240,10 @@ public sealed class MondayDirectorySource(
         ISet<string> assignedIds,
         CancellationToken cancellationToken)
     {
-        var cursors = new HashSet<string>(StringComparer.Ordinal);
-        string? cursor = null;
-        for (var page = 0; page < 500; page++)
+        await foreach (var items in ReadItemPagesAsync(settings, FirstDirectoryItemsQuery,
+            new { ids = new[] { board.Id }, professionalColumn = board.ResponsibleColumnId },
+            NextDirectoryItemsQuery, cancellationToken))
         {
-            using var document = page == 0
-                ? await QueryAsync(settings, FirstDirectoryItemsQuery,
-                    new { ids = new[] { board.Id }, professionalColumn = board.ResponsibleColumnId },
-                    cancellationToken)
-                : await QueryAsync(settings, NextDirectoryItemsQuery, new { cursor = cursor! }, cancellationToken);
-            var data = document.RootElement.GetProperty("data");
-            JsonElement pageData;
-            if (page == 0)
-            {
-                var boards = data.GetProperty("boards");
-                if (boards.GetArrayLength() != 1)
-                    throw new ExternalDirectoryException("monday_board_unavailable",
-                        "The configured Monday board is not available.");
-                pageData = boards[0].GetProperty("items_page");
-            }
-            else
-            {
-                pageData = data.GetProperty("next_items_page");
-            }
-
-            if (!pageData.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
-                throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the board items.");
             foreach (var item in items.EnumerateArray())
             {
                 if (!item.TryGetProperty("column_values", out var columns) || columns.ValueKind != JsonValueKind.Array)
@@ -314,13 +264,34 @@ public sealed class MondayDirectorySource(
                     assignedIds.Add(id!);
             }
 
+        }
+    }
+
+    private async IAsyncEnumerable<JsonElement> ReadItemPagesAsync(
+        MondayDirectoryOptions settings,
+        string firstQuery,
+        object firstVariables,
+        string nextQuery,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var cursors = new HashSet<string>(StringComparer.Ordinal);
+        string? cursor = null;
+        for (var page = 0; page < 500; page++)
+        {
+            using var document = page == 0
+                ? await QueryAsync(settings, firstQuery, firstVariables, cancellationToken)
+                : await QueryAsync(settings, nextQuery, new { cursor = cursor! }, cancellationToken);
+            var data = document.RootElement.GetProperty("data");
+            var pageData = page == 0 ? SingleBoard(document).GetProperty("items_page") : data.GetProperty("next_items_page");
+            if (!pageData.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the board items.");
+            yield return items;
+
             cursor = ReadString(pageData, "cursor");
-            if (string.IsNullOrWhiteSpace(cursor))
-                return;
+            if (string.IsNullOrWhiteSpace(cursor)) yield break;
             if (!cursors.Add(cursor))
                 throw new ExternalDirectoryException("monday_pagination_repeated", "Monday repeated a pagination cursor.");
         }
-
         throw new ExternalDirectoryException("monday_pagination_limit", "Monday item pagination exceeded the supported limit.");
     }
 
@@ -433,7 +404,7 @@ public sealed class MondayDirectorySource(
         request.Headers.TryAddWithoutValidation("Authorization", settings.Token!.Trim());
         request.Headers.TryAddWithoutValidation("API-Version", settings.ApiVersion);
         request.Content = JsonContent.Create(new { query, variables });
-        using var response = await SendAsync(request, cancellationToken);
+        using var response = await ExternalSourceHttp.SendAsync(httpClient, request, "monday", "Monday", cancellationToken);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         var root = document.RootElement;
@@ -546,28 +517,6 @@ public sealed class MondayDirectorySource(
 
     private static DateTimeOffset? ReadDate(JsonElement element, string propertyName)
         => DateTimeOffset.TryParse(ReadString(element, propertyName), out var value) ? value : null;
-
-    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                response.Dispose();
-                throw new ExternalDirectoryException("monday_http_error", "Monday returned an unsuccessful response.");
-            }
-            return response;
-        }
-        catch (ExternalDirectoryException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-        {
-            throw new ExternalDirectoryException("monday_unreachable", "Monday could not be reached.", exception);
-        }
-    }
 
     private static string? ReadString(JsonElement element, string propertyName)
     {

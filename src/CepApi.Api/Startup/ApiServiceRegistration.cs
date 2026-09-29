@@ -1,9 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using CepApi.Api.Controllers;
+using CepApi.Api.Services;
 using CepApi.Api.Authorization;
-using CepApi.Infrastructure.Services;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
@@ -19,6 +18,7 @@ internal static class ApiServiceRegistration
         builder.Services.AddScoped<AuthenticationSessionService>();
         builder.Services.AddScoped<CredentialAuthenticationService>();
         builder.Services.AddScoped<RefreshTokenSessionService>();
+        builder.Services.AddScoped<InvitationService>();
         builder.Services.AddScoped<WebSessionCookie>();
         builder.Services.AddScoped<OrganizationScopeService>();
         builder.Services.AddScoped<TimeControlAccessService>();
@@ -34,9 +34,7 @@ internal static class ApiServiceRegistration
                     Status = StatusCodes.Status400BadRequest,
                     Title = "Request validation failed."
                 };
-                problem.Extensions["code"] = "validation_failed";
-                problem.Extensions["correlationId"] = context.HttpContext.TraceIdentifier;
-                return new BadRequestObjectResult(problem);
+                return new BadRequestObjectResult(ApiProblems.Enrich(problem, context.HttpContext, "validation_failed"));
             };
         });
 

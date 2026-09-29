@@ -16,7 +16,7 @@ internal static class ProductionConfigurationValidator
 
         ValidateJwt(jwt);
         ValidateEmail(email);
-        ValidateSecurityCodes(securityCodes);
+        _ = (securityCodes ?? new SecurityCodeOptions()).ReadHmacKey();
 
         if (string.IsNullOrWhiteSpace(builder.Configuration["DataProtection:KeysPath"]))
             throw new InvalidOperationException(
@@ -43,19 +43,6 @@ internal static class ProductionConfigurationValidator
             throw new InvalidOperationException("A valid SMTP Email configuration is required in Production.");
         if (email.AllowInsecureTransport)
             throw new InvalidOperationException("SMTP TLS is required in Production.");
-    }
-
-    private static void ValidateSecurityCodes(SecurityCodeOptions? securityCodes)
-    {
-        try
-        {
-            if (Convert.FromBase64String(securityCodes?.HmacKey?.Trim() ?? string.Empty).Length < 32)
-                throw new InvalidOperationException("SecurityCodes:HmacKey must contain at least 32 random bytes.");
-        }
-        catch (FormatException exception)
-        {
-            throw new InvalidOperationException("SecurityCodes:HmacKey must be valid Base64.", exception);
-        }
     }
 
     private static void ValidateWorkforceIntegration(

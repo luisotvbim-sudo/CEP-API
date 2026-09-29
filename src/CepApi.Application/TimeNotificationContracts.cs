@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Text.Json;
 using CepApi.Domain;
 
 namespace CepApi.Application;

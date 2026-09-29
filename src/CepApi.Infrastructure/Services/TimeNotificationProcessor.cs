@@ -1,33 +1,27 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace CepApi.Infrastructure.Services;
 
 public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEnumerable<IExternalWorkforceTimeSource> sources)
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) } };
-
-    public async Task TickAsync(CancellationToken ct)
+    public async Task TickAsync(CancellationToken cancellationToken)
     {
         // Session lock survives source calls without holding a long database transaction.
         // Closing the connection releases the lock after a crash. All writes are committed together.
-        await db.Database.OpenConnectionAsync(ct);
+        await db.Database.OpenConnectionAsync(cancellationToken);
         var acquired = false;
         try
         {
-            acquired = await db.Database.SqlQueryRaw<bool>("SELECT pg_try_advisory_lock(718930112) AS \"Value\"").SingleAsync(ct);
+            acquired = await db.Database.SqlQueryRaw<bool>("SELECT pg_try_advisory_lock(718930112) AS \"Value\"").SingleAsync(cancellationToken);
             if (!acquired) return;
-            await EnqueueDueAsync(ct);
+            await EnqueueDueAsync(cancellationToken);
             var pending = await db.Set<TimeNotificationDispatch>().Where(x => x.Status == NotificationDispatchStatus.Pending)
-                .OrderBy(x => x.CreatedAt).Take(20).ToListAsync(ct);
-            foreach (var dispatch in pending) await ProcessAsync(dispatch, ct);
+                .OrderBy(x => x.CreatedAt).Take(20).ToListAsync(cancellationToken);
+            foreach (var dispatch in pending) await ProcessAsync(dispatch, cancellationToken);
         }
         finally
         {
@@ -36,20 +30,28 @@ public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEn
         }
     }
 
-    private async Task EnqueueDueAsync(CancellationToken ct)
+    private async Task EnqueueDueAsync(CancellationToken cancellationToken)
     {
-        var settings = await db.Set<TimeControlSettings>().AsNoTracking().SingleAsync(ct);
+        var settings = await db.Set<TimeControlSettings>().AsNoTracking().SingleAsync(cancellationToken);
         var now = clock.UtcNow;
         var today = TimeAnalysisEngine.LocalDate(now);
         var midnight = TimeAnalysisEngine.StartOfDay(today);
         var schedules = settings.AutomaticEnabled && today.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)
-            ? await db.Set<TimeNotificationSchedule>().AsNoTracking().Where(x => !x.IsDeleted && x.IsEnabled).ToListAsync(ct) : [];
+            ? await db.Set<TimeNotificationSchedule>().AsNoTracking().Where(x => !x.IsDeleted && x.IsEnabled).ToListAsync(cancellationToken) : [];
         var organizations = await db.Organizations.AsNoTracking().Where(x => x.Status == OrganizationStatus.Active &&
-            db.WorkforcePeople.Any(p => p.OrganizationId == x.Id && p.UserId != null)).Select(x => x.Id).ToArrayAsync(ct);
-        foreach (var org in organizations)
+            db.WorkforcePeople.Any(p => p.OrganizationId == x.Id && p.UserId != null)).Select(x => x.Id).ToArrayAsync(cancellationToken);
+        var reportKey = $"report:{today:yyyy-MM-dd}";
+        var scheduledKeys = schedules.ToDictionary(schedule => schedule.Id,
+            schedule => $"schedule:{schedule.Id}:{today:yyyy-MM-dd}");
+        var candidateKeys = scheduledKeys.Values.Append(reportKey).ToArray();
+        var existing = await db.Set<TimeNotificationDispatch>().AsNoTracking()
+            .Where(x => organizations.Contains(x.OrganizationId) && candidateKeys.Contains(x.DeduplicationKey))
+            .Select(x => new { x.OrganizationId, x.DeduplicationKey }).ToListAsync(cancellationToken);
+        var keys = existing.Select(x => (x.OrganizationId, x.DeduplicationKey)).ToHashSet();
+        foreach (var organizationId in organizations)
         {
             // The report is generated once per civil day, also on weekends. No popup.
-            await AddAsync(org, $"report:{today:yyyy-MM-dd}", null, midnight, true, settings, ct);
+            AddScheduledDispatch(organizationId, reportKey, null, midnight, true, settings, keys);
             foreach (var schedule in schedules)
             {
                 var due = midnight.Add(schedule.LocalTime.ToTimeSpan());
@@ -57,88 +59,138 @@ public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEn
                 // Preserve the original cutoff; clients group delayed receipts. Enabling
                 // or changing settings does not replay earlier slots from that day.
                 if (now < due || due < settings.UpdatedAt) continue;
-                await AddAsync(org, $"schedule:{schedule.Id}:{today:yyyy-MM-dd}", schedule, due, false, settings, ct);
+                AddScheduledDispatch(organizationId, scheduledKeys[schedule.Id], schedule, due, false, settings, keys);
             }
         }
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task AddAsync(Guid org, string key, TimeNotificationSchedule? schedule, DateTimeOffset at,
-        bool reportOnly, TimeControlSettings settings, CancellationToken ct)
+    private void AddScheduledDispatch(Guid organizationId, string key, TimeNotificationSchedule? schedule, DateTimeOffset at,
+        bool reportOnly, TimeControlSettings settings, HashSet<(Guid, string)> keys)
     {
-        if (await db.Set<TimeNotificationDispatch>().AnyAsync(x => x.OrganizationId == org && x.DeduplicationKey == key, ct)) return;
-        db.Add(new TimeNotificationDispatch { OrganizationId = org, DeduplicationKey = key, RequestHash = "scheduled",
-            Message = schedule?.Message ?? "Relatório do dia anterior", ScheduleId = schedule?.Id, Kind = schedule?.Kind,
+        if (!keys.Add((organizationId, key))) return;
+        db.Add(new TimeNotificationDispatch
+        {
+            OrganizationId = organizationId,
+            DeduplicationKey = key,
+            RequestHash = "scheduled",
+            Message = schedule?.Message ?? "Relatório do dia anterior",
+            ScheduleId = schedule?.Id,
+            Kind = schedule?.Kind,
             Period = reportOnly || schedule?.Kind == NotificationScheduleKind.PreviousDay ? AnalysisPeriod.PreviousDay : AnalysisPeriod.Daily,
-            ReportOnly = reportOnly, CreatedAt = at, ToleranceMinutes = settings.ToleranceMinutes, SettingsVersion = settings.Version });
+            ReportOnly = reportOnly,
+            CreatedAt = at,
+            ToleranceMinutes = settings.ToleranceMinutes,
+            SettingsVersion = settings.Version
+        });
     }
 
-    private async Task ProcessAsync(TimeNotificationDispatch dispatch, CancellationToken ct)
+    private async Task ProcessAsync(TimeNotificationDispatch dispatch, CancellationToken cancellationToken)
     {
-        if (!await db.Organizations.AnyAsync(x => x.Id == dispatch.OrganizationId && x.Status == OrganizationStatus.Active, ct) ||
+        if (!await db.Organizations.AnyAsync(x => x.Id == dispatch.OrganizationId && x.Status == OrganizationStatus.Active, cancellationToken) ||
             dispatch.ActorUserId.HasValue && !await db.Users.AnyAsync(u => u.Id == dispatch.ActorUserId && u.Status == UserStatus.Active &&
-                (u.Role == UserRole.SystemAdmin || u.Role == UserRole.OrganizationAdmin && u.OrganizationId == dispatch.OrganizationId), ct))
+                (u.Role == UserRole.SystemAdmin || u.Role == UserRole.OrganizationAdmin && u.OrganizationId == dispatch.OrganizationId), cancellationToken))
         {
-            dispatch.Status = NotificationDispatchStatus.Failed; dispatch.ErrorCode = "dispatch_scope_revoked";
-            dispatch.CompletedAt = clock.UtcNow; await db.SaveChangesAsync(ct); return;
+            await FailAsync(dispatch, "dispatch_scope_revoked", cancellationToken);
+            return;
         }
-        if (dispatch.ScheduleId.HasValue && (!await db.Set<TimeControlSettings>().AnyAsync(s => s.AutomaticEnabled, ct) ||
-            !await db.Set<TimeNotificationSchedule>().AnyAsync(s => s.Id == dispatch.ScheduleId && s.IsEnabled && !s.IsDeleted, ct)))
+        if (dispatch.ScheduleId.HasValue && (!await db.Set<TimeControlSettings>().AnyAsync(s => s.AutomaticEnabled, cancellationToken) ||
+            !await db.Set<TimeNotificationSchedule>().AnyAsync(s => s.Id == dispatch.ScheduleId && s.IsEnabled && !s.IsDeleted, cancellationToken)))
         {
-            dispatch.Status = NotificationDispatchStatus.Failed; dispatch.ErrorCode = "schedule_disabled";
-            dispatch.CompletedAt = clock.UtcNow; await db.SaveChangesAsync(ct); return;
+            await FailAsync(dispatch, "schedule_disabled", cancellationToken);
+            return;
         }
-        var people = await db.WorkforcePeople.AsNoTracking().Include(x => x.MondayIdentity).Include(x => x.VrMaisIdentity)
-            .Where(p => p.OrganizationId == dispatch.OrganizationId && p.UserId != null && (!dispatch.UserId.HasValue || p.UserId == dispatch.UserId) &&
-                db.Users.Any(u => u.Id == p.UserId && u.OrganizationId == dispatch.OrganizationId && u.Status == UserStatus.Active))
-            .ToListAsync(ct);
+        var people = await db.ActiveNotificationRecipients(dispatch.OrganizationId, dispatch.UserId).AsNoTracking()
+            .Include(x => x.MondayIdentity).Include(x => x.VrMaisIdentity).ToListAsync(cancellationToken);
         // Captured at enqueue: every recipient and both sources share the same cutoff.
         var window = TimeAnalysisEngine.ResolvePeriod(dispatch.Period, dispatch.CreatedAt);
+        var (snapshots, sourceStates) = await FetchSourcesAsync(people, window, cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (dispatch.ScheduleId.HasValue)
+        {
+            // Serialize final publication with disabling/deleting a schedule. Source
+            // calls happened outside this short transaction and may have taken time.
+            var settings = await db.Set<TimeControlSettings>().FromSqlRaw("SELECT * FROM time_control.app_settings WHERE \"Id\" = 1 FOR SHARE")
+                .AsNoTracking().SingleAsync(cancellationToken);
+            var schedule = await db.Set<TimeNotificationSchedule>().FromSqlInterpolated($"SELECT * FROM time_control.notification_schedules WHERE \"Id\" = {dispatch.ScheduleId.Value} FOR SHARE")
+                .AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+            if (!settings.AutomaticEnabled || schedule is null || !schedule.IsEnabled || schedule.IsDeleted)
+            {
+                await FailAsync(dispatch, "schedule_disabled", cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return;
+            }
+        }
+        CreateReports(dispatch, people, window, snapshots, sourceStates);
+        dispatch.Status = NotificationDispatchStatus.Completed;
+        dispatch.CompletedAt = clock.UtcNow;
+        if (snapshots.Count != 2 || snapshots.Values.Any(x => !x.Complete)) dispatch.ErrorCode = "analysis_sources_incomplete";
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task<(Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot> Snapshots,
+        List<TimeAnalysisSourceResponse> States)> FetchSourcesAsync(
+        IReadOnlyCollection<WorkforcePerson> people, AnalysisWindow window, CancellationToken cancellationToken)
+    {
         var snapshots = new Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot>();
         var sourceStates = new List<TimeAnalysisSourceResponse>();
         foreach (var source in sources)
         {
             var ids = people.Select(p => source.Source == ExternalWorkforceSource.Monday ? p.MondayIdentity : p.VrMaisIdentity)
                 .Where(x => x.IsActive).Select(x => x.ExternalId).Distinct().ToArray();
-            if (ids.Length == 0) { sourceStates.Add(new(source.Source, "incomplete", "source_scope_empty", clock.UtcNow)); continue; }
+            if (ids.Length == 0)
+            {
+                sourceStates.Add(new(source.Source, "incomplete", "source_scope_empty", clock.UtcNow));
+                continue;
+            }
             try
             {
                 var snapshot = source is IExternalWorkforceOverlapTimeSource overlap
-                    ? await overlap.FetchIncludingOverlapAsync(window.From, window.To, ids, ct)
-                    : await source.FetchAsync(window.From, window.To, ids, ct);
+                    ? await overlap.FetchIncludingOverlapAsync(window.From, window.To, ids, cancellationToken)
+                    : await source.FetchAsync(window.From, window.To, ids, cancellationToken);
                 snapshots[source.Source] = snapshot;
                 sourceStates.Add(new(source.Source, snapshot.Complete ? "complete" : "incomplete", null, clock.UtcNow));
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception e) when (e is ExternalDirectoryException or HttpRequestException or TaskCanceledException or JsonException)
-            { sourceStates.Add(new(source.Source, "incomplete", e is ExternalDirectoryException external ? external.Code : "source_unavailable", clock.UtcNow)); }
-        }
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        if (dispatch.ScheduleId.HasValue)
-        {
-            // Serialize final publication with disabling/deleting a schedule. Source
-            // calls happened outside this short transaction and may have taken time.
-            var settings = await db.Set<TimeControlSettings>().FromSqlRaw("SELECT * FROM time_control.app_settings WHERE \"Id\" = 1 FOR SHARE")
-                .AsNoTracking().SingleAsync(ct);
-            var schedule = await db.Set<TimeNotificationSchedule>().FromSqlInterpolated($"SELECT * FROM time_control.notification_schedules WHERE \"Id\" = {dispatch.ScheduleId.Value} FOR SHARE")
-                .AsNoTracking().SingleOrDefaultAsync(ct);
-            if (!settings.AutomaticEnabled || schedule is null || !schedule.IsEnabled || schedule.IsDeleted)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                dispatch.Status = NotificationDispatchStatus.Failed; dispatch.ErrorCode = "schedule_disabled";
-                dispatch.CompletedAt = clock.UtcNow; await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); return;
+                throw;
+            }
+            catch (Exception exception) when (exception is ExternalDirectoryException or HttpRequestException or TaskCanceledException or JsonException)
+            {
+                var errorCode = exception is ExternalDirectoryException external ? external.Code : "source_unavailable";
+                sourceStates.Add(new(source.Source, "incomplete", errorCode, clock.UtcNow));
             }
         }
+        return (snapshots, sourceStates);
+    }
+
+    private void CreateReports(TimeNotificationDispatch dispatch, IReadOnlyCollection<WorkforcePerson> people,
+        AnalysisWindow window, Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot> snapshots,
+        List<TimeAnalysisSourceResponse> sourceStates)
+    {
+        var recordsBySource = snapshots.ToDictionary(pair => pair.Key,
+            pair => pair.Value.Records.ToLookup(record => record.ExternalIdentityId, StringComparer.Ordinal));
         foreach (var person in people)
         {
             var records = new List<WorkforceTimeRecord>();
-            foreach (var (source, snapshot) in snapshots)
+            foreach (var (source, sourceRecords) in recordsBySource)
             {
                 var identity = source == ExternalWorkforceSource.Monday ? person.MondayIdentity : person.VrMaisIdentity;
-                records.AddRange(snapshot.Records.Where(r => r.ExternalIdentityId == identity.ExternalId).Select(r => new WorkforceTimeRecord
+                records.AddRange(sourceRecords[identity.ExternalId].Select(r => new WorkforceTimeRecord
                 {
-                    OrganizationId = person.OrganizationId, ExternalIdentityId = identity.Id, Source = source,
-                    ExternalKey = r.ExternalKey, WorkDate = r.WorkDate, StartedAt = r.StartedAt, EndedAt = r.EndedAt,
-                    DurationSeconds = r.DurationSeconds, State = r.State, Title = r.Title, DetailsJson = r.DetailsJson, LastSyncedAt = clock.UtcNow
+                    OrganizationId = person.OrganizationId,
+                    ExternalIdentityId = identity.Id,
+                    Source = source,
+                    ExternalKey = r.ExternalKey,
+                    WorkDate = r.WorkDate,
+                    StartedAt = r.StartedAt,
+                    EndedAt = r.EndedAt,
+                    DurationSeconds = r.DurationSeconds,
+                    State = r.State,
+                    Title = r.Title,
+                    DetailsJson = r.DetailsJson,
+                    LastSyncedAt = clock.UtcNow
                 }));
             }
             var complete = snapshots.Count == 2 && snapshots.Values.All(x => x.Complete && x.From <= window.From && x.To >= window.To) &&
@@ -146,9 +198,17 @@ public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEn
             var analysis = TimeAnalysisEngine.Analyze(window.From, window.To, window.Cutoff, dispatch.ToleranceMinutes, records, complete);
             var response = new TimeAnalysisResponse(analysis.From, analysis.To, analysis.Cutoff, analysis.ToleranceMinutes, analysis.Days,
                 analysis.VrSeconds, analysis.MondaySeconds, analysis.DeltaSeconds, analysis.AbsoluteDivergenceSeconds, analysis.HasIssues, dispatch.SettingsVersion, sourceStates);
-            var report = new TimeAnalysisReport { OrganizationId = person.OrganizationId, DispatchId = dispatch.Id,
-                WorkforcePersonId = person.Id, UserId = person.UserId!.Value, DisplayName = person.DisplayName,
-                Period = dispatch.Period, CreatedAt = clock.UtcNow, AnalysisJson = JsonSerializer.Serialize(response, Json) };
+            var report = new TimeAnalysisReport
+            {
+                OrganizationId = person.OrganizationId,
+                DispatchId = dispatch.Id,
+                WorkforcePersonId = person.Id,
+                UserId = person.UserId!.Value,
+                DisplayName = person.DisplayName,
+                Period = dispatch.Period,
+                CreatedAt = clock.UtcNow,
+                AnalysisJson = TimeAnalysisJson.Write(response)
+            };
             db.Add(report);
             var hasConfirmedError = analysis.Days.Any(x => x.Issues.Any(i => i is "odd_punches" or "running_timer" or "above_tolerance"));
             // The 10:00 reminder is only for an identified error yesterday, not
@@ -157,35 +217,24 @@ public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEn
             var outcome = hasConfirmedError ? "Há registros que precisam de ajuste."
                 : analysis.DeltaSeconds is null ? "Não foi possível conferir todas as horas. Consulte a qualidade das fontes."
                 : "Suas horas estão dentro da tolerância até o momento analisado.";
-            db.Add(new TimeNotification { OrganizationId = person.OrganizationId, UserId = person.UserId.Value, Report = report,
-                ReportId = report.Id, Message = $"{dispatch.Message}\n{outcome}", CreatedAt = clock.UtcNow });
+            db.Add(new TimeNotification
+            {
+                OrganizationId = person.OrganizationId,
+                UserId = person.UserId.Value,
+                Report = report,
+                ReportId = report.Id,
+                Message = $"{dispatch.Message}\n{outcome}",
+                CreatedAt = clock.UtcNow
+            });
             dispatch.RecipientCount++;
         }
-        dispatch.Status = NotificationDispatchStatus.Completed; dispatch.CompletedAt = clock.UtcNow;
-        if (snapshots.Count != 2 || snapshots.Values.Any(x => !x.Complete)) dispatch.ErrorCode = "analysis_sources_incomplete";
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
     }
-}
 
-internal sealed class TimeNotificationWorker(IServiceScopeFactory scopes, ILogger<TimeNotificationWorker> logger) : BackgroundService
-{
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    private async Task FailAsync(TimeNotificationDispatch dispatch, string code, CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
-        do
-        {
-            try
-            {
-                await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<TimeNotificationProcessor>().TickAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception)
-            {
-                // Do not log external responses, personnel data, messages or credentials.
-                logger.LogWarning("Time notification processing failed; pending work will be retried.");
-            }
-        } while (await timer.WaitForNextTickAsync(stoppingToken));
+        dispatch.Status = NotificationDispatchStatus.Failed;
+        dispatch.ErrorCode = code;
+        dispatch.CompletedAt = clock.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
     }
 }

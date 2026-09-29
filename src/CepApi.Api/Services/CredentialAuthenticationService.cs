@@ -5,7 +5,7 @@ using CepApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace CepApi.Api.Controllers;
+namespace CepApi.Api.Services;
 
 public sealed class CredentialAuthenticationService(
     AppDbContext db,

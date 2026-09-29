@@ -6,7 +6,7 @@ using CepApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace CepApi.Api.Controllers;
+namespace CepApi.Api.Services;
 
 public sealed class RefreshTokenSessionService(
     AppDbContext db,
@@ -111,15 +111,7 @@ public sealed class RefreshTokenSessionService(
         if (session.ReplacedBySessionId is null)
             return;
 
-        var family = await db.RefreshSessions
-            .Where(x => x.FamilyId == session.FamilyId && x.RevokedAt == null)
-            .ToListAsync(cancellationToken);
-        foreach (var item in family)
-        {
-            item.RevokedAt = clock.UtcNow;
-            item.RevocationReason = "refresh_token_reuse";
-        }
-        await db.SaveChangesAsync(cancellationToken);
+        await db.RevokeFamilyAsync(session.UserId, session.FamilyId, clock.UtcNow, "refresh_token_reuse", cancellationToken);
         await audit.WriteAsync("auth.refresh_reuse_detected", actorUserId: session.UserId,
             targetUserId: session.UserId, ipAddress: ipAddress, cancellationToken: cancellationToken);
     }

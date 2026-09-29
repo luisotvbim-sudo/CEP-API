@@ -15,18 +15,14 @@ public sealed class VrMaisDirectorySource(
 
     public async Task<ExternalWorkforceDirectorySnapshot> FetchAsync(CancellationToken cancellationToken)
     {
-        var settings = options.Value.VrMais;
-        if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.Token))
-            throw new ExternalDirectoryException("vr_mais_not_configured", "VR Mais integration is not configured.");
-        if (!Uri.TryCreate(settings.ApiUrl.TrimEnd('/') + "/", UriKind.Absolute, out var baseUri) || baseUri.Scheme != Uri.UriSchemeHttps)
-            throw new ExternalDirectoryException("vr_mais_invalid_configuration", "VR Mais API URL must use HTTPS.");
+        var (settings, baseUri) = ValidateSettings();
 
         var endpoint = new Uri(baseUri, "employees?attributes=id,first_name,last_name,name,email,active,status&incluirAnexos=false");
         using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
-        request.Headers.TryAddWithoutValidation("access-token", settings.Token.Trim());
+        request.Headers.TryAddWithoutValidation("access-token", settings.Token!.Trim());
         request.Headers.TryAddWithoutValidation("Accept", "application/json");
 
-        using var response = await SendAsync(request, cancellationToken);
+        using var response = await ExternalSourceHttp.SendAsync(httpClient, request, "vr_mais", "VR Mais", cancellationToken);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         var root = document.RootElement;
@@ -65,30 +61,21 @@ public sealed class VrMaisDirectorySource(
     {
         if (to < from)
             throw new ExternalDirectoryException("vr_mais_invalid_period", "VR Mais synchronization period is invalid.");
-        var settings = options.Value.VrMais;
-        if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.Token))
-            throw new ExternalDirectoryException("vr_mais_not_configured", "VR Mais integration is not configured.");
-        if (!Uri.TryCreate(settings.ApiUrl.TrimEnd('/') + "/", UriKind.Absolute, out var baseUri) || baseUri.Scheme != Uri.UriSchemeHttps)
-            throw new ExternalDirectoryException("vr_mais_invalid_configuration", "VR Mais API URL must use HTTPS.");
+        var (settings, baseUri) = ValidateSettings();
 
         var employees = activeExternalIdentityIds.Where(id => long.TryParse(id, out _)).Distinct(StringComparer.Ordinal).ToArray();
         var requests = employees.SelectMany(employeeId => SplitPeriod(from, to)
-            .Select(period => (employeeId, period.From, period.To))).ToArray();
+            .Select(period => (employeeId, period.From, period.To)));
         var records = new ConcurrentDictionary<string, ExternalWorkforceTimeRecordSnapshot>(StringComparer.Ordinal);
-        using var concurrency = new SemaphoreSlim(2, 2);
-        await Task.WhenAll(requests.Select(async item =>
+        await Parallel.ForEachAsync(requests, new ParallelOptions
         {
-            await concurrency.WaitAsync(cancellationToken);
-            try
-            {
-                var chunk = await FetchReportAsync(baseUri, settings.Token!, item.employeeId, item.From, item.To, cancellationToken);
-                foreach (var record in chunk) records[record.ExternalKey] = record;
-            }
-            finally
-            {
-                concurrency.Release();
-            }
-        }));
+            MaxDegreeOfParallelism = 2,
+            CancellationToken = cancellationToken
+        }, async (item, token) =>
+        {
+            var chunk = await FetchReportAsync(baseUri, settings.Token!, item.employeeId, item.From, item.To, token);
+            foreach (var record in chunk) records[record.ExternalKey] = record;
+        });
 
         return new ExternalWorkforceTimeSnapshot(from, to, records.Values.OrderBy(x => x.WorkDate).ToArray(), true);
     }
@@ -116,7 +103,7 @@ public sealed class VrMaisDirectorySource(
                 format = "json"
             }
         });
-        using var response = await SendAsync(request, cancellationToken);
+        using var response = await ExternalSourceHttp.SendAsync(httpClient, request, "vr_mais", "VR Mais", cancellationToken);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         var root = document.RootElement;
@@ -210,26 +197,14 @@ public sealed class VrMaisDirectorySource(
             yield return (start, start.AddDays(30) < to ? start.AddDays(30) : to);
     }
 
-    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    private (VrMaisDirectoryOptions Settings, Uri BaseUri) ValidateSettings()
     {
-        try
-        {
-            var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                response.Dispose();
-                throw new ExternalDirectoryException("vr_mais_http_error", "VR Mais returned an unsuccessful response.");
-            }
-            return response;
-        }
-        catch (ExternalDirectoryException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-        {
-            throw new ExternalDirectoryException("vr_mais_unreachable", "VR Mais could not be reached.", exception);
-        }
+        var settings = options.Value.VrMais;
+        if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.Token))
+            throw new ExternalDirectoryException("vr_mais_not_configured", "VR Mais integration is not configured.");
+        if (!Uri.TryCreate(settings.ApiUrl.TrimEnd('/') + "/", UriKind.Absolute, out var baseUri) || baseUri.Scheme != Uri.UriSchemeHttps)
+            throw new ExternalDirectoryException("vr_mais_invalid_configuration", "VR Mais API URL must use HTTPS.");
+        return (settings, baseUri);
     }
 
     private static bool IsPaginated(JsonElement root, int received)

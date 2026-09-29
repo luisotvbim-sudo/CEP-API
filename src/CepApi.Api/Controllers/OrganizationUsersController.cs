@@ -1,10 +1,8 @@
 using CepApi.Application;
-using CepApi.Api.Authorization;
 using CepApi.Domain;
-using CepApi.Infrastructure.Identity;
+using CepApi.Api.Services;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,13 +13,9 @@ namespace CepApi.Api.Controllers;
 [OrganizationScope]
 public sealed class OrganizationUsersController(
     AppDbContext db,
-    UserManager<ApplicationUser> userManager,
-    ISecurityCodeService codeService,
-    IEmailQueue emailQueue,
-    IRegistrationEmailPolicy registrationEmailPolicy,
+    InvitationService invitations,
     IClock clock,
-    IAuditService audit,
-    OrganizationScopeService organizationScope) : ApiControllerBase
+    IAuditService audit) : ApiControllerBase
 {
     [HttpGet("users")]
     public async Task<ActionResult<PagedResponse<UserResponse>>> ListUsers(
@@ -30,7 +24,7 @@ public sealed class OrganizationUsersController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         (page, pageSize) = NormalizePage(page, pageSize);
         var query = db.Users.AsNoTracking().Include(x => x.ProductAccesses).Where(x => x.OrganizationId == scopedOrganizationId);
         if (!string.IsNullOrWhiteSpace(search))
@@ -43,7 +37,7 @@ public sealed class OrganizationUsersController(
         if (product is not null) query = query.Where(x => x.ProductAccesses.Any(access => access.Product == product));
 
         var total = await query.LongCountAsync(cancellationToken);
-        var users = await query.OrderBy(x => x.DisplayName).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        var users = await query.OrderBy(x => x.DisplayName).ThenBy(x => x.Id).Page(page, pageSize).ToListAsync(cancellationToken);
         return Ok(new PagedResponse<UserResponse>(users.Select(x => x.ToUserResponse()).ToArray(), page, pageSize, total));
     }
 
@@ -53,38 +47,21 @@ public sealed class OrganizationUsersController(
         [FromQuery] Guid? organizationId,
         CancellationToken cancellationToken)
     {
-        if (!await registrationEmailPolicy.IsAllowedAsync(request.Email, cancellationToken))
-            return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
+        await invitations.EnsureAllowedEmailAsync(request.Email, cancellationToken);
         if (request.Role is UserRole.SystemAdmin)
             return ApiProblem(StatusCodes.Status400BadRequest, "SystemAdmin cannot be assigned inside an organization.", "invalid_role");
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var organization = await db.Organizations.SingleAsync(x => x.Id == scopedOrganizationId, cancellationToken);
         if (organization.Status != OrganizationStatus.Active)
             return ApiProblem(StatusCodes.Status403Forbidden, "Organization is not active.", "organization_inactive");
 
-        var normalizedEmail = userManager.NormalizeEmail(request.Email);
-        if (await db.Users.AnyAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken) ||
-            await db.Invitations.AnyAsync(x => x.Email == normalizedEmail && x.AcceptedAt == null && x.RevokedAt == null && x.ExpiresAt > clock.UtcNow, cancellationToken))
-            return ApiProblem(StatusCodes.Status409Conflict, "Email already exists or has a pending invitation.", "email_unavailable");
+        var normalizedEmail = await invitations.ReserveEmailAsync(request.Email, cancellationToken);
 
-        var now = clock.UtcNow;
-        var code = codeService.GenerateInvitationCode();
-        var products = request.Products?.Distinct().ToHashSet() ?? [];
-        var invitation = new Invitation
-        {
-            OrganizationId = scopedOrganizationId,
-            Email = normalizedEmail!,
-            Role = request.Role,
-            CanUseRevit = products.Contains(Product.Revit),
-            CanUseZwcad = products.Contains(Product.Zwcad),
-            CodeHash = codeService.Hash(code),
-            CreatedAt = now,
-            ExpiresAt = now.AddHours(48),
-            CreatedByUserId = CurrentUserId
-        };
-        db.Invitations.Add(invitation);
-        emailQueue.Invitation(request.Email.Trim(), organization.Name, code, invitation.ExpiresAt);
+        var invitation = invitations.Create(organization, request.Email, normalizedEmail, request.Role,
+            request.Products ?? [], CurrentUserId);
         await audit.WriteAsync("invitation.created", scopedOrganizationId, CurrentUserId, details: new { invitation.Id, invitation.Email, role = request.Role.ToString() }, ipAddress: IpAddress, cancellationToken: cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return CreatedAtAction(nameof(ListInvitations),
             new { organizationId = scopedOrganizationId }, invitation.ToInvitationResponse());
     }
@@ -94,7 +71,7 @@ public sealed class OrganizationUsersController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var invitations = await db.Invitations.AsNoTracking().Where(x => x.OrganizationId == scopedOrganizationId)
             .OrderByDescending(x => x.CreatedAt).Take(200).ToListAsync(cancellationToken);
         return Ok(invitations.Select(x => x.ToInvitationResponse()).ToArray());
@@ -106,23 +83,8 @@ public sealed class OrganizationUsersController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
-        var invitation = await db.Invitations.Include(x => x.Organization)
-            .SingleOrDefaultAsync(x => x.Id == invitationId && x.OrganizationId == scopedOrganizationId, cancellationToken);
-        if (invitation is null) return ApiProblem(StatusCodes.Status404NotFound, "Invitation not found.", "invitation_not_found");
-        if (invitation.AcceptedAt is not null || invitation.RevokedAt is not null)
-            return ApiProblem(StatusCodes.Status409Conflict, "Invitation is no longer pending.", "invitation_not_pending");
-
-        if (!await registrationEmailPolicy.IsAllowedAsync(invitation.Email, cancellationToken))
-            return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
-
-        var code = codeService.GenerateInvitationCode();
-        invitation.CodeHash = codeService.Hash(code);
-        invitation.ExpiresAt = clock.UtcNow.AddHours(48);
-        invitation.FailedAttempts = 0;
-        emailQueue.Invitation(invitation.Email, invitation.Organization.Name, code, invitation.ExpiresAt);
-        await audit.WriteAsync("invitation.resent", scopedOrganizationId, CurrentUserId,
-            details: new { invitation.Id }, ipAddress: IpAddress, cancellationToken: cancellationToken);
+        await invitations.ResendAsync(ScopedOrganizationId, invitationId, CurrentUserId,
+            "invitation.resent", IpAddress, cancellationToken);
         return NoContent();
     }
 
@@ -132,16 +94,7 @@ public sealed class OrganizationUsersController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
-        var invitation = await db.Invitations.SingleOrDefaultAsync(
-            x => x.Id == invitationId && x.OrganizationId == scopedOrganizationId, cancellationToken);
-        if (invitation is null) return ApiProblem(StatusCodes.Status404NotFound, "Invitation not found.", "invitation_not_found");
-        if (invitation.AcceptedAt is not null)
-            return ApiProblem(StatusCodes.Status409Conflict, "Accepted invitations cannot be revoked.", "invitation_already_accepted");
-        invitation.RevokedAt ??= clock.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-        await audit.WriteAsync("invitation.revoked", scopedOrganizationId, CurrentUserId,
-            details: new { invitation.Id }, ipAddress: IpAddress, cancellationToken: cancellationToken);
+        await invitations.RevokeAsync(ScopedOrganizationId, invitationId, CurrentUserId, IpAddress, cancellationToken);
         return NoContent();
     }
 
@@ -154,19 +107,18 @@ public sealed class OrganizationUsersController(
     {
         if (request.Role is UserRole.SystemAdmin)
             return ApiProblem(StatusCodes.Status400BadRequest, "SystemAdmin cannot be assigned inside an organization.", "invalid_role");
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         // Serialize the last-administrator check for the organization, then account changes.
-        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT \"Id\" FROM organizations WHERE \"Id\" = {scopedOrganizationId} FOR UPDATE", cancellationToken);
+        await db.LockOrganizationAsync(scopedOrganizationId, cancellationToken);
         await db.LockUserAsync(userId, cancellationToken);
         var user = await db.Users.Include(x => x.ProductAccesses)
             .SingleOrDefaultAsync(x => x.Id == userId && x.OrganizationId == scopedOrganizationId, cancellationToken);
         if (user is null) return ApiProblem(StatusCodes.Status404NotFound, "User not found.", "user_not_found");
 
-        var otherAdminIds = await db.Users.Where(x => x.OrganizationId == scopedOrganizationId && x.Id != userId &&
-                x.Role == UserRole.OrganizationAdmin && x.Status == UserStatus.Active)
-            .Select(x => x.Id).ToListAsync(cancellationToken);
-        if (DomainRules.WouldRemoveLastAdministrator(userId, user.Role, user.Status, request.Role, request.Status, otherAdminIds))
+        var hasOtherAdmin = await db.Users.AnyAsync(x => x.OrganizationId == scopedOrganizationId && x.Id != userId &&
+            x.Role == UserRole.OrganizationAdmin && x.Status == UserStatus.Active, cancellationToken);
+        if (DomainRules.WouldRemoveLastAdministrator(user.Role, user.Status, request.Role, request.Status, hasOtherAdmin))
             return ApiProblem(StatusCodes.Status409Conflict, "The last active organization administrator cannot be removed.", "last_organization_admin");
 
         var securityChanged = user.Role != request.Role || user.Status != request.Status;
@@ -194,12 +146,7 @@ public sealed class OrganizationUsersController(
         if (securityChanged)
         {
             user.SecurityStamp = Guid.NewGuid().ToString();
-            var sessions = await db.RefreshSessions.Where(x => x.UserId == user.Id && x.RevokedAt == null).ToListAsync(cancellationToken);
-            foreach (var session in sessions)
-            {
-                session.RevokedAt = clock.UtcNow;
-                session.RevocationReason = "user_access_changed";
-            }
+            await db.RevokeUserSessionsAsync(user.Id, clock.UtcNow, "user_access_changed", cancellationToken);
         }
         await db.SaveChangesAsync(cancellationToken);
         await db.Entry(user).Collection(x => x.ProductAccesses).LoadAsync(cancellationToken);

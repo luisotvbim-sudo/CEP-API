@@ -1,5 +1,4 @@
 using System.Text.Json;
-using CepApi.Api.Authorization;
 using CepApi.Domain;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -15,8 +14,7 @@ public sealed record AuditEventResponse(Guid Id, Guid? OrganizationId, Guid? Act
 [Authorize(Roles = $"{nameof(UserRole.SystemAdmin)},{nameof(UserRole.OrganizationAdmin)}")]
 [OrganizationScope]
 public sealed class AuditController(
-    AppDbContext db,
-    OrganizationScopeService organizationScope) : ApiControllerBase
+    AppDbContext db) : ApiControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyCollection<AuditEventResponse>>> List(
@@ -25,7 +23,7 @@ public sealed class AuditController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var query = db.AuditEvents.AsNoTracking().Where(x => x.OrganizationId == scopedOrganizationId);
         if (before is not null) query = query.Where(x => x.CreatedAt < before);
         var events = await query.OrderByDescending(x => x.CreatedAt).Take(Math.Clamp(pageSize, 1, 200)).ToListAsync(cancellationToken);
