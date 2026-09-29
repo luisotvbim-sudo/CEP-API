@@ -50,18 +50,22 @@ public sealed class WorkforceHistoryController(
         var identityIds = people.SelectMany(x => new[] { x.MondayIdentityId, x.VrMaisIdentityId }).ToArray();
         var recordsQuery = db.WorkforceTimeRecords.AsNoTracking().Where(x => x.OrganizationId == scopedOrganizationId &&
             identityIds.Contains(x.ExternalIdentityId) && x.WorkDate >= from && x.WorkDate <= to && !x.IsRemoved);
-        if (source is not null) recordsQuery = recordsQuery.Where(x => x.Source == source);
         var records = await recordsQuery.OrderBy(x => x.WorkDate).ThenBy(x => x.Source).ThenBy(x => x.StartedAt)
             .ToListAsync(cancellationToken);
         var recordsByIdentity = records.GroupBy(x => x.ExternalIdentityId).ToDictionary(x => x.Key, x => x.ToArray());
 
-        var response = new WorkforceAdminHistoryResponse(from, to, clock.UtcNow, people.Select(person =>
+        var now = clock.UtcNow;
+        var tolerance = await db.Set<TimeControlSettings>().Select(x => x.ToleranceMinutes).SingleAsync(cancellationToken);
+        var response = new WorkforceAdminHistoryResponse(from, to, now, people.Select(person =>
         {
-            var personRecords = recordsByIdentity.GetValueOrDefault(person.MondayIdentityId, [])
+            var allRecords = recordsByIdentity.GetValueOrDefault(person.MondayIdentityId, [])
                 .Concat(recordsByIdentity.GetValueOrDefault(person.VrMaisIdentityId, []))
                 .OrderBy(x => x.WorkDate).ThenBy(x => x.Source).ThenBy(x => x.StartedAt)
-                .Select(ToResponse).ToArray();
-            return new WorkforcePersonHistoryResponse(person.Id, person.UserId, person.DisplayName, person.Email, personRecords);
+                .ToArray();
+            var personRecords = allRecords.Where(x => source is null || x.Source == source).Select(ToResponse).ToArray();
+            var days = personRecords.Select(x => x.WorkDate).Distinct().Order()
+                .Select(day => TimeAnalysisEngine.SummarizeImportedDay(day, now, tolerance, allRecords)).ToArray();
+            return new WorkforcePersonHistoryResponse(person.Id, person.UserId, person.DisplayName, person.Email, personRecords, days);
         }).ToArray());
 
         await audit.WriteAsync("time_control.history_viewed", scopedOrganizationId, CurrentUserId,

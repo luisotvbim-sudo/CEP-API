@@ -168,6 +168,16 @@ public sealed class ApiWorkflowTests
         historyResponse.EnsureSuccessStatusCode();
         var history = (await historyResponse.Content.ReadFromJsonAsync<WorkforceAdminHistoryResponse>(Json, cancellationToken))!;
         Assert.Equal(2, Assert.Single(history.People).Records.Count);
+        var historySummary = Assert.Single(Assert.Single(history.People).Days);
+        Assert.Equal(historyDay, historySummary.Day);
+        var filteredHistory = (await client.GetFromJsonAsync<WorkforceAdminHistoryResponse>(
+            $"/api/v1/organization/time-control/history?from={historyDay:yyyy-MM-dd}&to={historyDay:yyyy-MM-dd}&workforcePersonId={workforcePerson.Id}&source=monday",
+            Json, cancellationToken))!;
+        Assert.Equal(ExternalWorkforceSource.Monday, Assert.Single(Assert.Single(filteredHistory.People).Records).Source);
+        var filteredSummary = Assert.Single(Assert.Single(filteredHistory.People).Days);
+        Assert.Equal(historySummary.MondaySeconds, filteredSummary.MondaySeconds);
+        Assert.Equal(historySummary.VrSeconds, filteredSummary.VrSeconds);
+        Assert.Equal(historySummary.DeltaSeconds, filteredSummary.DeltaSeconds);
 
         var ninetyDayHistory = await client.GetAsync(
             $"/api/v1/organization/time-control/history?from={historyDay.AddDays(-89):yyyy-MM-dd}&to={historyDay:yyyy-MM-dd}",

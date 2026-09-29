@@ -110,7 +110,8 @@ public sealed record WorkforcePersonHistoryResponse(
     Guid? UserId,
     string DisplayName,
     string Email,
-    IReadOnlyCollection<WorkforceTimeRecordResponse> Records);
+    IReadOnlyCollection<WorkforceTimeRecordResponse> Records,
+    IReadOnlyCollection<TimeAnalysisDay> Days);
 
 public sealed record WorkforceAdminHistoryResponse(
     DateOnly From,

@@ -15,6 +15,30 @@ public sealed record TimeAnalysisResult(DateOnly From, DateOnly To, DateTimeOffs
 /// The caller supplies records for exactly one person and verifies source coverage/freshness.</summary>
 public static class TimeAnalysisEngine
 {
+    /// <summary>Summarizes stored history, without treating absent imports as zero or
+    /// extending a stored running timer up to the time of the query. This is not a
+    /// fresh source consultation and does not certify synchronization coverage.</summary>
+    public static TimeAnalysisDay SummarizeImportedDay(DateOnly day, DateTimeOffset now,
+        int toleranceMinutes, IEnumerable<WorkforceTimeRecord> records)
+    {
+        var input = records.Where(x => !x.IsRemoved).ToArray();
+        if (day > LocalDate(now))
+            return new(day, null, null, null, true, ["incomplete"]);
+        var result = Analyze(day, day, now, toleranceMinutes, input, true).Days[0];
+        var mondayRows = input.Where(x => x.Source == ExternalWorkforceSource.Monday && x.WorkDate == day).ToArray();
+        var vrRows = input.Where(x => x.Source == ExternalWorkforceSource.VrMais && x.WorkDate == day).ToArray();
+        var monday = mondayRows.Length == 0 || mondayRows.Any(x => x.DurationSeconds is null or < 0 ||
+            x.EndedAt is null || x.State == "running") ? null : result.MondaySeconds;
+        // Today's punches are a stored snapshot: never infer work after their last import.
+        var vr = result.Partial ? null : result.VrSeconds;
+        if (vrRows.Any(x => x.DurationSeconds is null or < 0)) vr = null;
+        var delta = monday.HasValue && vr.HasValue ? result.DeltaSeconds : null;
+        var issues = result.Issues.Where(x => delta.HasValue || x != "above_tolerance").ToHashSet();
+        if (monday is null || vr is null) issues.Add("incomplete");
+        return result with { MondaySeconds = monday, VrSeconds = vr, DeltaSeconds = delta,
+            Issues = issues.Order(StringComparer.Ordinal).ToArray() };
+    }
+
     public static TimeZoneInfo SaoPaulo { get; } = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
     public static DateOnly LocalDate(DateTimeOffset instant) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, SaoPaulo).DateTime);
     public static DateTimeOffset StartOfDay(DateOnly day) => AtTime(day, TimeOnly.MinValue);
