@@ -12,7 +12,7 @@ public sealed class SmtpEmailSender(IOptions<EmailOptions> options) : IEmailSend
     private readonly EmailOptions _options = options.Value;
 
     public Task SendInvitationAsync(string email, string organizationName, string code, DateTimeOffset expiresAt, CancellationToken cancellationToken)
-        => SendAsync(email, "Convite para acessar os plugins", $"Você foi convidado para {organizationName}. Código: {code}. Válido até {expiresAt:u}.", cancellationToken);
+        => SendAsync(email, "Ative sua conta CEP", $"Você foi convidado para {organizationName}.\n\nAtivar minha conta: {_options.InvitationActivationUrl}\n\nNa página, informe este e-mail, seu nome, o código abaixo e crie uma senha de pelo menos 12 caracteres.\nCódigo de ativação: {code}\nVálido até {TimeZoneInfo.ConvertTimeBySystemTimeZoneId(expiresAt, "America/Sao_Paulo"):dd/MM/yyyy HH:mm} (horário de São Paulo).\n\nO código não é sua senha de login. Depois de ativar, entre com seu e-mail e a senha criada. Você também pode abrir o portal e escolher Recebi um convite. Se o convite expirar, peça um novo ao administrador.\n\nSe não esperava este convite, ignore esta mensagem.", cancellationToken);
 
     public Task SendPasswordResetAsync(string email, string code, DateTimeOffset expiresAt, CancellationToken cancellationToken)
         => SendAsync(email, "Recuperação de senha", $"Seu código de recuperação é {code}. Válido até {expiresAt:u}.", cancellationToken);

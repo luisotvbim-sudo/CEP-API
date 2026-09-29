@@ -27,6 +27,16 @@ public sealed class InvitationAcceptanceController(
     public async Task<ActionResult<TokenResponse>> AcceptInvitation(
         AcceptInvitationRequest request,
         CancellationToken cancellationToken)
+        => await AcceptAsync(request, cancellationToken, createSession: true);
+
+    [HttpPost("invitations/activate")]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> ActivateInvitation(AcceptInvitationRequest request, CancellationToken cancellationToken)
+        => (await AcceptAsync(request, cancellationToken, createSession: false)).Result!;
+
+    private async Task<ActionResult<TokenResponse>> AcceptAsync(
+        AcceptInvitationRequest request, CancellationToken cancellationToken, bool createSession)
     {
         if (!await registrationEmailPolicy.IsAllowedAsync(request.Email, cancellationToken))
             return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
@@ -104,11 +114,13 @@ public sealed class InvitationAcceptanceController(
         await db.SaveChangesAsync(cancellationToken);
         await db.Entry(user).Collection(x => x.ProductAccesses).LoadAsync(cancellationToken);
 
-        var response = await sessionService.CreateAsync(user, request.Client, IpAddress, cancellationToken);
+        var response = createSession
+            ? await sessionService.CreateAsync(user, request.Client, IpAddress, cancellationToken)
+            : null;
         await audit.WriteAsync("invitation.accepted", user.OrganizationId, user.Id, user.Id,
             ipAddress: IpAddress, cancellationToken: cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return Ok(response);
+        return createSession ? Ok(response) : NoContent();
     }
 
     private void AddProductAccesses(Invitation invitation, Guid userId, DateTimeOffset grantedAt)
