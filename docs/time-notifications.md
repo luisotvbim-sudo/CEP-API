@@ -41,7 +41,7 @@ SystemAdmin passa `organizationId` nas rotas organizacionais. “Todos” signif
 
 ## Limites explícitos
 
-- O agendador aceita atraso do servidor de até dois minutos; não recria avisos de almoço/fim de dia horas depois de uma indisponibilidade. Isso é diferente de PC desligado: notificações já geradas no servidor continuam pendentes e são recuperadas integralmente.
+- O agendador recupera horários devidos do mesmo dia civil após consulta lenta ou indisponibilidade, preservando o corte original; cliente identifica atraso e agrupa popups. Habilitação/alteração da configuração global não recria horários anteriores à alteração. Execuções de dias anteriores que nunca foram enfileiradas não são reconstruídas. Notificações já geradas no servidor continuam pendentes e são recuperadas integralmente, independentemente do dia.
 - Não há calendário de feriados/férias aprovado. A restrição implementada é sábado/domingo para agendas. Envios manuais continuam disponíveis.
 - Dias sem dados VR não viram zero. Sem calendário de dias dispensados, uma semana/sprint com dias incompletos pode não ter saldo agregado conclusivo; os valores e ocorrências diários continuam visíveis.
 - Relatórios são snapshots imutáveis, consultados por data de geração; não há workflow de justificativa/aprovação nesta entrega. Consulta da lista não atualiza fontes. Novos envios e execuções produzem nova análise.

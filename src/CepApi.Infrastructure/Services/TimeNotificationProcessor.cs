@@ -53,8 +53,10 @@ public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEn
             foreach (var schedule in schedules)
             {
                 var due = midnight.Add(schedule.LocalTime.ToTimeSpan());
-                // Do not replay hours-old lunch reminders after a server outage.
-                if (now < due || now - due > TimeSpan.FromMinutes(2)) continue;
+                // Catch up this civil day's due slots even after slow upstream calls.
+                // Preserve the original cutoff; clients group delayed receipts. Enabling
+                // or changing settings does not replay earlier slots from that day.
+                if (now < due || due < settings.UpdatedAt) continue;
                 await AddAsync(org, $"schedule:{schedule.Id}:{today:yyyy-MM-dd}", schedule, due, false, settings, ct);
             }
         }
