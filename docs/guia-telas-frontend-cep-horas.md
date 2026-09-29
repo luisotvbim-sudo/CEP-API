@@ -237,3 +237,6 @@ Para esses novos contratos, preservar a regra transversal: **todo card, tabela, 
 # Ativação de convite
 
 O primeiro acesso agora tem [contrato de ativação de convite](invitation-activation.md), com formulário, link de e-mail e endpoint sem tokens. A implementação está na branch `codex/invitation-activation`, ainda sem publicação em produção.
+
+## Reenvio de convite em Pessoas
+[Contrato e comportamento da tela](people-invitation-resend.md): permitir reenvio de convites pendentes, inclusive antes da expiração.
