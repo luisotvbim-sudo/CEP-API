@@ -219,7 +219,9 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var settings = await db.Set<TimeControlSettings>().SingleAsync(Ct);
         var oldEnabled = settings.AutomaticEnabled;
+        var oldUpdatedAt = settings.UpdatedAt;
         settings.AutomaticEnabled = true;
+        settings.UpdatedAt = DateTimeOffset.Parse("2026-09-29T03:00:00Z");
         await db.SaveChangesAsync(Ct);
         try
         {
@@ -237,7 +239,50 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
             Assert.Single(result.Days);
             Assert.Equal(expected, await db.Set<TimeNotification>().CountAsync(x => x.ReportId == report.Id, Ct));
         }
-        finally { settings.AutomaticEnabled = oldEnabled; await db.SaveChangesAsync(Ct); }
+        finally
+        {
+            settings.AutomaticEnabled = oldEnabled;
+            settings.UpdatedAt = oldUpdatedAt;
+            await db.SaveChangesAsync(Ct);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 0)]
+    public async Task Delayed_worker_catches_up_once_but_enabling_after_due_does_not_replay(bool enabledAfterDue, int expected)
+    {
+        var user = await fixture.CreateUserAsync();
+        await Associate(user);
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var settings = await db.Set<TimeControlSettings>().SingleAsync(Ct);
+        var oldEnabled = settings.AutomaticEnabled;
+        var oldUpdatedAt = settings.UpdatedAt;
+        settings.AutomaticEnabled = true;
+        settings.UpdatedAt = DateTimeOffset.Parse(enabledAfterDue ? "2026-09-29T16:00:00Z" : "2026-09-29T03:00:00Z");
+        await db.SaveChangesAsync(Ct);
+        try
+        {
+            var processor = new TimeNotificationProcessor(db, new FixedClock(DateTimeOffset.Parse("2026-09-29T16:10:00Z")),
+                [new MorningSource(ExternalWorkforceSource.Monday, true), new MorningSource(ExternalWorkforceSource.VrMais, true)]);
+            await processor.TickAsync(Ct);
+            await processor.TickAsync(Ct);
+            var morning = await db.Set<TimeNotificationDispatch>()
+                .Where(x => x.OrganizationId == user.OrganizationId && x.Kind == NotificationScheduleKind.PreviousDay)
+                .ToArrayAsync(Ct);
+            Assert.Equal(expected, morning.Length);
+            if (expected == 1)
+                Assert.Equal(DateTimeOffset.Parse("2026-09-29T13:00:00Z"), Assert.Single(morning).CreatedAt);
+            else
+                Assert.False(await db.Set<TimeNotificationDispatch>().AnyAsync(x => x.OrganizationId == user.OrganizationId && x.ScheduleId != null, Ct));
+        }
+        finally
+        {
+            settings.AutomaticEnabled = oldEnabled;
+            settings.UpdatedAt = oldUpdatedAt;
+            await db.SaveChangesAsync(Ct);
+        }
     }
 
     private async Task<Guid> SeedNotification(ApplicationUser user)
