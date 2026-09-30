@@ -15,7 +15,6 @@ public sealed class WorkforceHistoryController(
     AppDbContext db,
     IClock clock,
     IAuditService audit,
-    OrganizationScopeService organizationScope,
     TimeControlAccessService accessService) : ApiControllerBase
 {
     [HttpGet]
@@ -34,7 +33,7 @@ public sealed class WorkforceHistoryController(
             return ApiProblem(StatusCodes.Status400BadRequest,
                 $"The history period cannot exceed {WorkforceHistoryPolicy.RetentionDays} days.", "history_period_too_large");
 
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var access = await accessService.ResolveAsync(
             scopedOrganizationId, CurrentUserId, CurrentRole, cancellationToken);
         var query = db.WorkforcePeople.AsNoTracking().Where(x => x.OrganizationId == scopedOrganizationId);

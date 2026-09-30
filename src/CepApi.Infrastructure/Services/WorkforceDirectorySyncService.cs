@@ -10,7 +10,6 @@ internal sealed class WorkforceDirectorySyncService(
     IEnumerable<IExternalWorkforceDirectorySource> directorySources,
     IEnumerable<IExternalWorkforceTimeSource> timeSources,
     WorkforceSnapshotWriter snapshotWriter,
-    WorkforceSyncPeriodResolver periodResolver,
     IClock clock) : IWorkforceDirectorySyncService
 {
     private readonly IReadOnlyDictionary<ExternalWorkforceSource, IExternalWorkforceDirectorySource> directorySourcesByType =
@@ -131,49 +130,37 @@ internal sealed class WorkforceDirectorySyncService(
         bool fullRefresh,
         CancellationToken cancellationToken)
     {
-        if (directoryOutcome?.Error is { } directoryError)
+        try
         {
-            MarkFailed(run, directoryError.Code, directoryError.Message);
+            if (directoryOutcome?.Error is { } directoryError) throw directoryError;
+            var activeExternalIds = targetedExternalIds;
+            if (directoryOutcome?.Snapshot is { } snapshot)
+            {
+                await snapshotWriter.ApplyDirectoryAsync(organizationId, run, snapshot, cancellationToken);
+                await db.SaveChangesAsync(cancellationToken);
+                activeExternalIds = snapshot.Identities.Where(x => x.IsActive)
+                    .Select(x => x.ExternalId.Trim()).Distinct(StringComparer.Ordinal).ToArray();
+            }
+            else
+            {
+                run.CompleteSnapshot = true;
+            }
+
+            if (!timeSourcesByType.TryGetValue(run.Source, out var timeSource))
+                throw new ExternalDirectoryException("time_source_not_registered", $"{run.Source} time integration is not registered.");
+            var period = WorkforceHistoryPolicy.SyncPeriod(clock.UtcNow, fullRefresh);
+            var timeSnapshot = await timeSource.FetchAsync(period.From, period.To, activeExternalIds!, cancellationToken);
+            await snapshotWriter.ApplyTimeAsync(organizationId, run, timeSnapshot, activeExternalIds!, cancellationToken);
+            run.Status = WorkforceSyncStatus.Succeeded;
         }
-        else
+        catch (ExternalDirectoryException exception)
         {
-            try
-            {
-                var activeExternalIds = targetedExternalIds;
-                if (directoryOutcome is not null)
-                {
-                    var snapshot = directoryOutcome.Snapshot!;
-                    await snapshotWriter.ApplyDirectoryAsync(organizationId, run, snapshot, cancellationToken);
-                    await db.SaveChangesAsync(cancellationToken);
-                    activeExternalIds = snapshot.Identities.Where(x => x.IsActive)
-                        .Select(x => x.ExternalId.Trim()).Distinct(StringComparer.Ordinal).ToArray();
-                }
-                else
-                {
-                    run.CompleteSnapshot = true;
-                }
-
-                if (!timeSourcesByType.TryGetValue(run.Source, out var timeSource))
-                    throw new ExternalDirectoryException(
-                        "time_source_not_registered",
-                        $"{run.Source} time integration is not registered.");
-
-                var period = periodResolver.Resolve(fullRefresh);
-                var timeSnapshot = await timeSource.FetchAsync(
-                    period.From, period.To, activeExternalIds!, cancellationToken);
-                await snapshotWriter.ApplyTimeAsync(
-                    organizationId, run, timeSnapshot, activeExternalIds!, cancellationToken);
-                run.Status = WorkforceSyncStatus.Succeeded;
-            }
-            catch (ExternalDirectoryException exception)
-            {
-                MarkFailed(run, exception.Code, exception.Message, partiallySucceeded: run.ReceivedCount > 0);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                MarkFailed(run, "time_sync_failed", $"{run.Source} time synchronization failed.",
-                    partiallySucceeded: run.ReceivedCount > 0);
-            }
+            MarkFailed(run, exception.Code, exception.Message, partiallySucceeded: run.ReceivedCount > 0);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            MarkFailed(run, "time_sync_failed", $"{run.Source} time synchronization failed.",
+                partiallySucceeded: run.ReceivedCount > 0);
         }
 
         run.CompletedAt = clock.UtcNow;
@@ -192,10 +179,8 @@ internal sealed class WorkforceDirectorySyncService(
             people = people.Where(x => x.UserId != null && userIds.Contains(x.UserId.Value));
         }
 
-        var identityIds = await people.Select(x => new { x.MondayIdentityId, x.VrMaisIdentityId })
-            .ToArrayAsync(cancellationToken);
-        var mondayIds = identityIds.Select(x => x.MondayIdentityId).ToArray();
-        var vrMaisIds = identityIds.Select(x => x.VrMaisIdentityId).ToArray();
+        var mondayIds = people.Select(x => x.MondayIdentityId);
+        var vrMaisIds = people.Select(x => x.VrMaisIdentityId);
         var activeIdentities = await db.ExternalWorkforceIdentities.AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.IsActive &&
                 (x.Source == ExternalWorkforceSource.Monday && mondayIds.Contains(x.Id) ||

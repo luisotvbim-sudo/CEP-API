@@ -15,7 +15,6 @@ public sealed class TimeControlTeamAssignmentsController(
     AppDbContext db,
     IClock clock,
     IAuditService audit,
-    OrganizationScopeService organizationScope,
     TimeControlAccessService accessService) : ApiControllerBase
 {
     [HttpGet]
@@ -26,7 +25,7 @@ public sealed class TimeControlTeamAssignmentsController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var access = await accessService.ResolveAsync(
             scopedOrganizationId, CurrentUserId, CurrentRole, cancellationToken);
         if (!access.CanReadTeam(teamId) ||
@@ -66,7 +65,7 @@ public sealed class TimeControlTeamAssignmentsController(
         [FromQuery] Guid? organizationId,
         CancellationToken cancellationToken)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         if (request.UserId == Guid.Empty || request.EffectiveTo < request.EffectiveFrom)
             return ApiProblem(StatusCodes.Status400BadRequest, "The assignment period is invalid.", "invalid_assignment_period");
 
@@ -125,7 +124,7 @@ public sealed class TimeControlTeamAssignmentsController(
         [FromQuery] Guid? organizationId,
         CancellationToken cancellationToken)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await LockAssignmentAsync(teamId, assignmentId, scopedOrganizationId, cancellationToken);
         var assignment = await db.TeamAssignments.Include(x => x.Team).SingleOrDefaultAsync(

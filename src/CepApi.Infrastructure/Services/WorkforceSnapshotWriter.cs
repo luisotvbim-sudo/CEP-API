@@ -23,16 +23,22 @@ internal sealed class WorkforceSnapshotWriter(AppDbContext db, IClock clock)
         foreach (var item in normalized)
         {
             seen.Add(item.ExternalId);
-            if (!existing.TryGetValue(item.ExternalId, out var identity))
+            var isNew = !existing.TryGetValue(item.ExternalId, out var identity);
+            identity ??= new ExternalWorkforceIdentity
             {
-                identity = CreateIdentity(organizationId, run.Source, item, now);
+                OrganizationId = organizationId,
+                Source = run.Source,
+                ExternalId = item.ExternalId,
+                DisplayName = item.DisplayName,
+                FirstSeenAt = now
+            };
+            var changed = UpdateIdentity(identity, item, now);
+            if (isNew)
+            {
                 db.ExternalWorkforceIdentities.Add(identity);
-                existing.Add(item.ExternalId, identity);
                 run.CreatedCount++;
-                continue;
             }
-
-            if (UpdateIdentity(identity, item, now))
+            else if (changed)
                 run.UpdatedCount++;
         }
 
@@ -61,7 +67,7 @@ internal sealed class WorkforceSnapshotWriter(AppDbContext db, IClock clock)
         var identities = await LoadIdentitiesAsync(organizationId, run.Source, externalIds, cancellationToken);
         EnsureKnownIdentities(normalized, externalIds, identities);
 
-        var identityIds = identities.Values.Select(x => x.Id).ToArray();
+        var identityIds = identities.Values.Select(x => x.Id).ToHashSet();
         var snapshotKeys = normalized.Select(x => x.ExternalKey).ToArray();
         var existing = await db.WorkforceTimeRecords.Where(x => x.OrganizationId == organizationId &&
                 x.Source == run.Source &&
@@ -75,16 +81,21 @@ internal sealed class WorkforceSnapshotWriter(AppDbContext db, IClock clock)
         {
             seen.Add(item.ExternalKey);
             var identityId = identities[item.ExternalIdentityId].Id;
-            if (!existing.TryGetValue(item.ExternalKey, out var record))
+            var isNew = !existing.TryGetValue(item.ExternalKey, out var record);
+            record ??= new WorkforceTimeRecord
             {
-                record = CreateTimeRecord(organizationId, run.Source, identityId, item, now);
+                OrganizationId = organizationId,
+                Source = run.Source,
+                ExternalKey = item.ExternalKey,
+                State = item.State
+            };
+            var changed = UpdateTimeRecord(record, identityId, item, now);
+            if (isNew)
+            {
                 db.WorkforceTimeRecords.Add(record);
-                existing.Add(item.ExternalKey, record);
                 run.TimeRecordCreatedCount++;
-                continue;
             }
-
-            if (UpdateTimeRecord(record, identityId, item, now))
+            else if (changed)
                 run.TimeRecordUpdatedCount++;
         }
 
@@ -116,7 +127,7 @@ internal sealed class WorkforceSnapshotWriter(AppDbContext db, IClock clock)
             .ToDictionaryAsync(x => x.ExternalId, StringComparer.Ordinal, cancellationToken);
 
     private static void EnsureKnownIdentities(
-        IReadOnlyCollection<NormalizedWorkforceTimeRecord> records,
+        IReadOnlyCollection<ExternalWorkforceTimeRecordSnapshot> records,
         IReadOnlyCollection<string> externalIds,
         IReadOnlyDictionary<string, ExternalWorkforceIdentity> identities)
     {
@@ -136,27 +147,9 @@ internal sealed class WorkforceSnapshotWriter(AppDbContext db, IClock clock)
             x.WorkDate < retentionCutoff).ExecuteDeleteAsync(cancellationToken);
     }
 
-    private static ExternalWorkforceIdentity CreateIdentity(
-        Guid organizationId,
-        ExternalWorkforceSource source,
-        NormalizedWorkforceIdentity item,
-        DateTimeOffset now)
-        => new()
-        {
-            OrganizationId = organizationId,
-            Source = source,
-            ExternalId = item.ExternalId,
-            DisplayName = item.DisplayName,
-            Email = item.Email,
-            IsActive = item.IsActive,
-            FirstSeenAt = now,
-            LastSeenAt = now,
-            SourceUpdatedAt = item.SourceUpdatedAt
-        };
-
     private static bool UpdateIdentity(
         ExternalWorkforceIdentity identity,
-        NormalizedWorkforceIdentity item,
+        ExternalWorkforceIdentitySnapshot item,
         DateTimeOffset now)
     {
         var changed = identity.DisplayName != item.DisplayName || identity.Email != item.Email ||
@@ -169,33 +162,10 @@ internal sealed class WorkforceSnapshotWriter(AppDbContext db, IClock clock)
         return changed;
     }
 
-    private static WorkforceTimeRecord CreateTimeRecord(
-        Guid organizationId,
-        ExternalWorkforceSource source,
-        Guid identityId,
-        NormalizedWorkforceTimeRecord item,
-        DateTimeOffset now)
-        => new()
-        {
-            OrganizationId = organizationId,
-            Source = source,
-            ExternalIdentityId = identityId,
-            ExternalKey = item.ExternalKey,
-            WorkDate = item.WorkDate,
-            StartedAt = item.StartedAt,
-            EndedAt = item.EndedAt,
-            DurationSeconds = item.DurationSeconds,
-            State = item.State,
-            Title = item.Title,
-            Url = item.Url,
-            DetailsJson = item.DetailsJson,
-            LastSyncedAt = now
-        };
-
     private static bool UpdateTimeRecord(
         WorkforceTimeRecord record,
         Guid identityId,
-        NormalizedWorkforceTimeRecord item,
+        ExternalWorkforceTimeRecordSnapshot item,
         DateTimeOffset now)
     {
         var changed = record.ExternalIdentityId != identityId || record.WorkDate != item.WorkDate ||

@@ -1,3 +1,4 @@
+using CepApi.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -25,10 +26,27 @@ public static class SecurityTransactions
     public static Task<int> LockUserAsync(this AppDbContext db, Guid userId, CancellationToken cancellationToken)
         => db.Database.ExecuteSqlInterpolatedAsync($"SELECT \"Id\" FROM users WHERE \"Id\" = {userId} FOR UPDATE", cancellationToken);
 
-    public static Task<int> RevokeFamilyAsync(this AppDbContext db, Guid userId, Guid familyId, DateTimeOffset now, string reason, CancellationToken cancellationToken)
-        => db.RefreshSessions.Where(x => x.UserId == userId && x.FamilyId == familyId && x.RevokedAt == null)
+    public static Task<int> LockOrganizationAsync(this AppDbContext db, Guid organizationId, CancellationToken cancellationToken)
+        => db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT \"Id\" FROM organizations WHERE \"Id\" = {organizationId} FOR UPDATE", cancellationToken);
+
+    public static Task<int> LockOrganizationUsersAsync(this AppDbContext db, Guid organizationId, CancellationToken cancellationToken)
+        => db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT \"Id\" FROM users WHERE \"OrganizationId\" = {organizationId} ORDER BY \"Id\" FOR UPDATE", cancellationToken);
+
+    // Call under the account lock. These updates deliberately bypass tracking and leave
+    // already revoked sessions (including their original reason) untouched.
+    public static Task<int> RevokeSessionsAsync(this IQueryable<RefreshSession> sessions, DateTimeOffset now, string reason, CancellationToken cancellationToken)
+        => sessions.Where(x => x.RevokedAt == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.RevokedAt, now)
                 .SetProperty(x => x.RevocationReason, reason), cancellationToken);
+
+    public static Task<int> RevokeUserSessionsAsync(this AppDbContext db, Guid userId, DateTimeOffset now, string reason, CancellationToken cancellationToken)
+        => db.RefreshSessions.Where(x => x.UserId == userId).RevokeSessionsAsync(now, reason, cancellationToken);
+
+    public static Task<int> RevokeFamilyAsync(this AppDbContext db, Guid userId, Guid familyId, DateTimeOffset now, string reason, CancellationToken cancellationToken)
+        => db.RefreshSessions.Where(x => x.UserId == userId && x.FamilyId == familyId)
+            .RevokeSessionsAsync(now, reason, cancellationToken);
 
     public static Task<int> InvalidateResetCodesAsync(this AppDbContext db, Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
         => db.PasswordResets.Where(x => x.UserId == userId && x.UsedAt == null)

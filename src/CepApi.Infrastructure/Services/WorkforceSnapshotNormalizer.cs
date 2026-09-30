@@ -9,19 +9,19 @@ internal static class WorkforceSnapshotNormalizer
     private const int MaximumTimeRecords = 500_000;
     private const int MaximumDetailsLength = 20_000;
 
-    public static IReadOnlyCollection<NormalizedWorkforceIdentity> NormalizeDirectory(
+    public static IReadOnlyCollection<ExternalWorkforceIdentitySnapshot> NormalizeDirectory(
         ExternalWorkforceDirectorySnapshot snapshot)
     {
         if (snapshot.Identities.Count > MaximumDirectorySize)
             throw new ExternalDirectoryException(
                 "directory_too_large", "The external directory exceeded the supported limit.");
 
-        var identities = snapshot.Identities.Select(item => new NormalizedWorkforceIdentity(
-            Truncate(item.ExternalId.Trim(), 200),
-            Truncate(item.DisplayName.Trim(), 200),
-            NormalizeEmail(item.Email),
-            item.IsActive,
-            item.SourceUpdatedAt)).ToArray();
+        var identities = snapshot.Identities.Select(item => item with
+        {
+            ExternalId = Truncate(item.ExternalId.Trim(), 200),
+            DisplayName = Truncate(item.DisplayName.Trim(), 200),
+            Email = NormalizeEmail(item.Email)
+        }).ToArray();
 
         if (identities.Any(x => x.ExternalId.Length == 0 || x.DisplayName.Length == 0))
             throw new ExternalDirectoryException(
@@ -33,7 +33,7 @@ internal static class WorkforceSnapshotNormalizer
         return identities;
     }
 
-    public static IReadOnlyCollection<NormalizedWorkforceTimeRecord> NormalizeTime(
+    public static IReadOnlyCollection<ExternalWorkforceTimeRecordSnapshot> NormalizeTime(
         ExternalWorkforceTimeSnapshot snapshot)
     {
         if (snapshot.To < snapshot.From || snapshot.Records.Count > MaximumTimeRecords)
@@ -54,7 +54,7 @@ internal static class WorkforceSnapshotNormalizer
     public static string[] NormalizeExternalIds(IEnumerable<string> externalIds)
         => externalIds.Select(x => Truncate(x.Trim(), 200)).Distinct(StringComparer.Ordinal).ToArray();
 
-    private static NormalizedWorkforceTimeRecord NormalizeTimeRecord(
+    private static ExternalWorkforceTimeRecordSnapshot NormalizeTimeRecord(
         ExternalWorkforceTimeRecordSnapshot item)
     {
         var externalIdentityId = Truncate(item.ExternalIdentityId.Trim(), 200);
@@ -66,17 +66,14 @@ internal static class WorkforceSnapshotNormalizer
                 "time_snapshot_invalid_record", "The external source returned an invalid time record.");
 
         ValidateDetails(item.DetailsJson);
-        return new NormalizedWorkforceTimeRecord(
-            externalIdentityId,
-            externalKey,
-            item.WorkDate,
-            item.StartedAt,
-            item.EndedAt,
-            item.DurationSeconds,
-            state,
-            TruncateNullable(item.Title, 500),
-            NormalizeUrl(item.Url),
-            item.DetailsJson);
+        return item with
+        {
+            ExternalIdentityId = externalIdentityId,
+            ExternalKey = externalKey,
+            State = state,
+            Title = TruncateNullable(item.Title, 500),
+            Url = NormalizeUrl(item.Url)
+        };
     }
 
     private static void ValidateDetails(string? details)
@@ -98,7 +95,10 @@ internal static class WorkforceSnapshotNormalizer
     }
 
     private static bool HasDuplicates(IEnumerable<string> values)
-        => values.GroupBy(x => x, StringComparer.Ordinal).Any(group => group.Skip(1).Any());
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        return values.Any(value => !seen.Add(value));
+    }
 
     private static string? NormalizeEmail(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : Truncate(value.Trim().ToLowerInvariant(), 320);
@@ -117,22 +117,3 @@ internal static class WorkforceSnapshotNormalizer
     private static string? TruncateNullable(string? value, int maxLength)
         => string.IsNullOrWhiteSpace(value) ? null : Truncate(value.Trim(), maxLength);
 }
-
-internal sealed record NormalizedWorkforceIdentity(
-    string ExternalId,
-    string DisplayName,
-    string? Email,
-    bool IsActive,
-    DateTimeOffset? SourceUpdatedAt);
-
-internal sealed record NormalizedWorkforceTimeRecord(
-    string ExternalIdentityId,
-    string ExternalKey,
-    DateOnly WorkDate,
-    DateTimeOffset? StartedAt,
-    DateTimeOffset? EndedAt,
-    int? DurationSeconds,
-    string State,
-    string? Title,
-    string? Url,
-    string? DetailsJson);

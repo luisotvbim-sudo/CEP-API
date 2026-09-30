@@ -4,7 +4,6 @@ using CepApi.Infrastructure;
 using CepApi.Infrastructure.Persistence;
 using CepApi.Infrastructure.Services;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -32,12 +31,7 @@ app.UseStatusCodePages(async statusContext =>
         StatusCodes.Status429TooManyRequests => ("Too many requests.", "rate_limit_exceeded"),
         _ => ("Request failed.", "request_failed")
     };
-    await response.WriteAsJsonAsync(new ProblemDetails
-    {
-        Status = response.StatusCode,
-        Title = title,
-        Extensions = { ["code"] = code, ["correlationId"] = statusContext.HttpContext.TraceIdentifier }
-    });
+    await response.WriteAsJsonAsync(ApiProblems.Create(statusContext.HttpContext, response.StatusCode, title, code));
 });
 app.UseHttpsRedirection();
 app.UseAuthentication();

@@ -15,7 +15,6 @@ public sealed class WorkforceDirectoryController(
     AppDbContext db,
     IWorkforceDirectorySyncService syncService,
     IAuditService audit,
-    OrganizationScopeService organizationScope,
     TimeControlAccessService accessService) : ApiControllerBase
 {
     [HttpGet("external-identities")]
@@ -30,7 +29,7 @@ public sealed class WorkforceDirectoryController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         (page, pageSize) = NormalizePage(page, pageSize, 200);
         var query = db.ExternalWorkforceIdentities.AsNoTracking()
             .Where(x => x.OrganizationId == scopedOrganizationId);
@@ -52,8 +51,8 @@ public sealed class WorkforceDirectoryController(
         }
 
         var total = await query.LongCountAsync(cancellationToken);
-        var items = await query.OrderBy(x => x.Source).ThenBy(x => x.DisplayName)
-            .Skip((page - 1) * pageSize).Take(pageSize)
+        var items = await query.OrderBy(x => x.Source).ThenBy(x => x.DisplayName).ThenBy(x => x.Id)
+            .Page(page, pageSize)
             .Select(identity => new ExternalWorkforceIdentityResponse(
                 identity.Id,
                 identity.Source,
@@ -74,7 +73,7 @@ public sealed class WorkforceDirectoryController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         if (full && CurrentRole == UserRole.User)
             return ApiProblem(StatusCodes.Status403Forbidden,
                 "Full synchronization requires organization administration access.", "full_sync_forbidden");
@@ -99,11 +98,7 @@ public sealed class WorkforceDirectoryController(
                 }, ipAddress: IpAddress, cancellationToken: cancellationToken);
             return Ok(ToResponse(batch));
         }
-        catch (ExternalDirectoryException exception) when (exception.Code == "sync_already_running")
-        {
-            return ApiProblem(StatusCodes.Status409Conflict, exception.Message, exception.Code);
-        }
-        catch (ExternalDirectoryException exception) when (exception.Code == "sync_scope_empty")
+        catch (ExternalDirectoryException exception) when (exception.Code is "sync_already_running" or "sync_scope_empty")
         {
             return ApiProblem(StatusCodes.Status409Conflict, exception.Message, exception.Code);
         }
@@ -114,7 +109,7 @@ public sealed class WorkforceDirectoryController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var query = db.WorkforceSyncBatches.AsNoTracking().Include(x => x.Sources)
             .Where(x => x.OrganizationId == scopedOrganizationId);
         if (CurrentRole == UserRole.User)
@@ -133,7 +128,7 @@ public sealed class WorkforceDirectoryController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var query = db.WorkforceSyncBatches.AsNoTracking().Include(x => x.Sources)
             .Where(x => x.Id == batchId && x.OrganizationId == scopedOrganizationId);
         if (CurrentRole == UserRole.User)

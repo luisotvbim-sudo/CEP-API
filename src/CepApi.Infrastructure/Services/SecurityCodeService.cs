@@ -9,7 +9,7 @@ public sealed class SecurityCodeService(IOptions<SecurityCodeOptions> options) :
 {
     private const string Alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private const string HmacPrefix = "h1:";
-    private readonly byte[] _hmacKey = ReadKey(options.Value.HmacKey);
+    private readonly byte[] _hmacKey = options.Value.ReadHmacKey();
 
     public string GenerateInvitationCode() => Generate(12);
 
@@ -46,23 +46,6 @@ public sealed class SecurityCodeService(IOptions<SecurityCodeOptions> options) :
     }
 
     private static byte[] Normalize(string value) => Encoding.UTF8.GetBytes(value.Trim().ToUpperInvariant());
-
-    private static byte[] ReadKey(string? configuredKey)
-    {
-        byte[] key;
-        try
-        {
-            key = Convert.FromBase64String(configuredKey?.Trim() ?? string.Empty);
-        }
-        catch (FormatException exception)
-        {
-            throw new InvalidOperationException("SecurityCodes:HmacKey must be valid Base64.", exception);
-        }
-
-        if (key.Length < 32)
-            throw new InvalidOperationException("SecurityCodes:HmacKey must contain at least 32 random bytes.");
-        return key;
-    }
 
     private static string Generate(int length)
     {

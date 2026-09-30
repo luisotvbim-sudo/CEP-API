@@ -1,3 +1,4 @@
+using CepApi.Api.Services;
 using CepApi.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

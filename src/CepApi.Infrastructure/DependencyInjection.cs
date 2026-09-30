@@ -54,7 +54,6 @@ public static class DependencyInjection
         services.AddScoped<IEmailQueue, EmailOutbox>();
         services.AddScoped<IRegistrationEmailPolicy, RegistrationEmailPolicy>();
         services.AddScoped<WorkforceSnapshotWriter>();
-        services.AddScoped<WorkforceSyncPeriodResolver>();
         services.AddScoped<IWorkforceDirectorySyncService, WorkforceDirectorySyncService>();
         services.AddHttpClient<MondayDirectorySource>(client => client.Timeout = TimeSpan.FromSeconds(45))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });

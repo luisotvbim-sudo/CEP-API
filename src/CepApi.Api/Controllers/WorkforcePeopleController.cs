@@ -1,10 +1,9 @@
 using CepApi.Application;
 using CepApi.Api.Authorization;
 using CepApi.Domain;
-using CepApi.Infrastructure.Identity;
+using CepApi.Api.Services;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,13 +14,9 @@ namespace CepApi.Api.Controllers;
 [OrganizationScope]
 public sealed class WorkforcePeopleController(
     AppDbContext db,
-    UserManager<ApplicationUser> userManager,
-    ISecurityCodeService codeService,
-    IEmailQueue emailQueue,
-    IRegistrationEmailPolicy registrationEmailPolicy,
+    InvitationService invitations,
     IClock clock,
     IAuditService audit,
-    OrganizationScopeService organizationScope,
     TimeControlAccessService accessService) : ApiControllerBase
 {
     [HttpGet]
@@ -32,7 +27,7 @@ public sealed class WorkforcePeopleController(
         [FromQuery] Guid? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         var access = await accessService.ResolveAsync(
             scopedOrganizationId, CurrentUserId, CurrentRole, cancellationToken);
         (page, pageSize) = NormalizePage(page, pageSize, 200);
@@ -48,14 +43,13 @@ public sealed class WorkforcePeopleController(
         }
 
         var total = await query.LongCountAsync(cancellationToken);
-        var people = await query.OrderBy(x => x.DisplayName).Skip((page - 1) * pageSize).Take(pageSize)
+        var people = await query.OrderBy(x => x.DisplayName).ThenBy(x => x.Id).Page(page, pageSize)
             .ToListAsync(cancellationToken);
         var personIds = people.Select(x => x.Id).ToArray();
-        var invitations = await db.Invitations.AsNoTracking().Where(x => x.WorkforcePersonId != null &&
+        var invitations = await db.Invitations.AsNoTracking().Where(x => x.OrganizationId == scopedOrganizationId && x.WorkforcePersonId != null &&
                 personIds.Contains(x.WorkforcePersonId.Value))
-            .OrderByDescending(x => x.CreatedAt).ToListAsync(cancellationToken);
-        var latestInvitations = invitations.GroupBy(x => x.WorkforcePersonId!.Value)
-            .ToDictionary(x => x.Key, x => x.First());
+            .GroupBy(x => x.WorkforcePersonId).Select(group => group.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id).First()).ToListAsync(cancellationToken);
+        var latestInvitations = invitations.ToDictionary(x => x.WorkforcePersonId!.Value);
 
         return Ok(new PagedResponse<WorkforcePersonResponse>(people.Select(person =>
             ToResponse(person, latestInvitations.GetValueOrDefault(person.Id))).ToArray(), page, pageSize, total));
@@ -72,13 +66,11 @@ public sealed class WorkforcePeopleController(
             return ApiProblem(StatusCodes.Status400BadRequest, "Both external identities are required.", "external_identities_required");
         if (string.IsNullOrWhiteSpace(request.DisplayName))
             return ApiProblem(StatusCodes.Status400BadRequest, "Display name cannot be empty.", "invalid_display_name");
-        if (!await registrationEmailPolicy.IsAllowedAsync(request.Email, cancellationToken))
-            return ApiProblem(StatusCodes.Status400BadRequest, "Email domain is not allowed for registration.", "email_domain_not_allowed");
+        await invitations.EnsureAllowedEmailAsync(request.Email, cancellationToken);
 
-        var scopedOrganizationId = await organizationScope.ResolveAsync(User, organizationId, cancellationToken);
+        var scopedOrganizationId = ScopedOrganizationId;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT \"Id\" FROM organizations WHERE \"Id\" = {scopedOrganizationId} FOR UPDATE", cancellationToken);
+        await db.LockOrganizationAsync(scopedOrganizationId, cancellationToken);
         var organization = await db.Organizations.SingleAsync(x => x.Id == scopedOrganizationId, cancellationToken);
         if (organization.Status != OrganizationStatus.Active)
             return ApiProblem(StatusCodes.Status403Forbidden, "Organization is not active.", "organization_inactive");
@@ -98,11 +90,7 @@ public sealed class WorkforcePeopleController(
             x.VrMaisIdentityId == vrMais.Id, cancellationToken))
             return ApiProblem(StatusCodes.Status409Conflict, "An external identity is already associated.", "external_identity_already_mapped");
 
-        var normalizedEmail = userManager.NormalizeEmail(request.Email)!;
-        if (await db.Users.AnyAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken) ||
-            await db.Invitations.AnyAsync(x => x.Email == normalizedEmail && x.AcceptedAt == null &&
-                x.RevokedAt == null && x.ExpiresAt > clock.UtcNow, cancellationToken))
-            return ApiProblem(StatusCodes.Status409Conflict, "Email already exists or has a pending invitation.", "email_unavailable");
+        var normalizedEmail = await invitations.ReserveEmailAsync(request.Email, cancellationToken);
 
         var now = clock.UtcNow;
         var person = new WorkforcePerson
@@ -117,20 +105,8 @@ public sealed class WorkforcePeopleController(
             CreatedByUserId = CurrentUserId
         };
         db.WorkforcePeople.Add(person);
-        var code = codeService.GenerateInvitationCode();
-        var invitation = new Invitation
-        {
-            OrganizationId = scopedOrganizationId,
-            WorkforcePersonId = person.Id,
-            Email = normalizedEmail,
-            Role = UserRole.User,
-            CodeHash = codeService.Hash(code),
-            CreatedAt = now,
-            ExpiresAt = now.AddHours(48),
-            CreatedByUserId = CurrentUserId
-        };
-        db.Invitations.Add(invitation);
-        emailQueue.Invitation(request.Email.Trim(), organization.Name, code, invitation.ExpiresAt);
+        var invitation = invitations.Create(organization, request.Email, normalizedEmail, UserRole.User,
+            [], CurrentUserId, person.Id);
         await audit.WriteAsync("time_control.workforce_person_invited", scopedOrganizationId, CurrentUserId,
             details: new
             {

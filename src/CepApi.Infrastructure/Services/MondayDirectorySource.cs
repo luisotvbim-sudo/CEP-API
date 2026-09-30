@@ -1,8 +1,10 @@
+using System.Runtime.CompilerServices;
 using System.Net.Http.Json;
 using System.Text.Json;
 using CepApi.Application;
 using CepApi.Domain;
 using Microsoft.Extensions.Options;
+using static CepApi.Infrastructure.Services.ExternalSourceJson;
 
 namespace CepApi.Infrastructure.Services;
 
@@ -53,65 +55,41 @@ public sealed class MondayDirectorySource(
           }
         }
         """;
-    private const string FirstTimePageQuery = """
+    private const string TimeColumns = """
+        column_values(types: [people, time_tracking]) {
+          id
+          ... on PeopleValue { persons_and_teams { id kind } }
+          ... on TimeTrackingValue {
+            running started_at
+            history { id status started_at ended_at started_user_id manually_entered_start_date manually_entered_start_time manually_entered_end_date manually_entered_end_time }
+          }
+        }
+        """;
+    private const string TimeItemFields = $$"""
+        id name url board { id }
+        {{TimeColumns}}
+        subitems {
+          id name url board { id }
+          {{TimeColumns}}
+        }
+        """;
+    private const string FirstTimePageQuery = $$"""
         query ($ids: [ID!]!, $responsibleColumn: ID!, $people: CompareValue!) {
           boards(ids: $ids) {
             id
             items_page(limit: 50, hierarchy_scope_config: "allItems",
               query_params: {rules: [{column_id: $responsibleColumn, compare_value: $people, operator: any_of}]}) {
               cursor
-              items {
-                id name url board { id }
-                column_values(types: [people, time_tracking]) {
-                  id
-                  ... on PeopleValue { persons_and_teams { id kind } }
-                  ... on TimeTrackingValue {
-                    running started_at
-                    history { id status started_at ended_at started_user_id manually_entered_start_date manually_entered_start_time manually_entered_end_date manually_entered_end_time }
-                  }
-                }
-                subitems {
-                  id name url board { id }
-                  column_values(types: [people, time_tracking]) {
-                    id
-                    ... on PeopleValue { persons_and_teams { id kind } }
-                    ... on TimeTrackingValue {
-                      running started_at
-                      history { id status started_at ended_at started_user_id manually_entered_start_date manually_entered_start_time manually_entered_end_date manually_entered_end_time }
-                    }
-                  }
-                }
-              }
+              items { {{TimeItemFields}} }
             }
           }
         }
         """;
-    private const string NextTimePageQuery = """
+    private const string NextTimePageQuery = $$"""
         query ($cursor: String!) {
           next_items_page(cursor: $cursor, limit: 50) {
             cursor
-            items {
-              id name url board { id }
-              column_values(types: [people, time_tracking]) {
-                id
-                ... on PeopleValue { persons_and_teams { id kind } }
-                ... on TimeTrackingValue {
-                  running started_at
-                  history { id status started_at ended_at started_user_id manually_entered_start_date manually_entered_start_time manually_entered_end_date manually_entered_end_time }
-                }
-              }
-              subitems {
-                id name url board { id }
-                column_values(types: [people, time_tracking]) {
-                  id
-                  ... on PeopleValue { persons_and_teams { id kind } }
-                  ... on TimeTrackingValue {
-                    running started_at
-                    history { id status started_at ended_at started_user_id manually_entered_start_date manually_entered_start_time manually_entered_end_date manually_entered_end_time }
-                  }
-                }
-              }
-            }
+            items { {{TimeItemFields}} }
           }
         }
         """;
@@ -175,20 +153,14 @@ public sealed class MondayDirectorySource(
             return new ExternalWorkforceTimeSnapshot(from, to, [], true);
         var settings = ValidateSettings();
         var allowedUsers = activeExternalIdentityIds.ToHashSet(StringComparer.Ordinal);
-        var records = new Dictionary<string, ExternalWorkforceTimeRecordSnapshot>(StringComparer.Ordinal);
-        var quality = new AnalysisQuality();
-        var now = DateTimeOffset.UtcNow;
-        var timeZone = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
+        var reader = new MondayTimeSnapshotReader(from, to, allowedUsers, includeOverlap, DateTimeOffset.UtcNow);
 
         var boards = await LoadBoardSchemasAsync(settings, cancellationToken);
         var subitemBoards = boards.Skip(1).ToDictionary(board => board.Id, StringComparer.Ordinal);
-        await FetchBoardTimeAsync(settings, boards.First(), subitemBoards, allowedUsers, from, to, now, timeZone,
-            records, includeOverlap, quality, cancellationToken);
-        foreach (var board in subitemBoards.Values.Where(board => board.ResponsibleColumnId is not null))
-            await FetchBoardTimeAsync(settings, board, subitemBoards, allowedUsers, from, to, now, timeZone,
-                records, includeOverlap, quality, cancellationToken);
+        foreach (var board in boards.Where(board => board.ResponsibleColumnId is not null))
+            await FetchBoardTimeAsync(settings, board, subitemBoards, allowedUsers, reader, cancellationToken);
 
-        return new ExternalWorkforceTimeSnapshot(from, to, records.Values.ToArray(), !includeOverlap || !quality.HasRelevantAmbiguity);
+        return reader.Snapshot();
     }
 
     private async Task FetchBoardTimeAsync(
@@ -196,46 +168,17 @@ public sealed class MondayDirectorySource(
         MondayBoardSchema board,
         IReadOnlyDictionary<string, MondayBoardSchema> subitemBoards,
         HashSet<string> allowedUsers,
-        DateOnly from,
-        DateOnly to,
-        DateTimeOffset now,
-        TimeZoneInfo timeZone,
-        IDictionary<string, ExternalWorkforceTimeRecordSnapshot> records,
-        bool includeOverlap,
-        AnalysisQuality quality,
+        MondayTimeSnapshotReader reader,
         CancellationToken cancellationToken)
     {
-        var cursors = new HashSet<string>(StringComparer.Ordinal);
-        string? cursor = null;
         var people = allowedUsers.Select(id => $"person-{id}").ToArray();
-
-        for (var page = 0; page < 500; page++)
+        await foreach (var items in ReadItemPagesAsync(settings, FirstTimePageQuery,
+            new { ids = new[] { board.Id }, responsibleColumn = board.ResponsibleColumnId, people },
+            NextTimePageQuery, cancellationToken))
         {
-            using var document = page == 0
-                ? await QueryAsync(settings, FirstTimePageQuery,
-                    new { ids = new[] { board.Id }, responsibleColumn = board.ResponsibleColumnId, people },
-                    cancellationToken)
-                : await QueryAsync(settings, NextTimePageQuery, new { cursor = cursor! }, cancellationToken);
-            var data = document.RootElement.GetProperty("data");
-            JsonElement pageData;
-            if (page == 0)
-            {
-                var boards = data.GetProperty("boards");
-                if (boards.GetArrayLength() != 1)
-                    throw new ExternalDirectoryException("monday_board_unavailable", "The configured Monday board is not available.");
-                pageData = boards[0].GetProperty("items_page");
-            }
-            else
-            {
-                pageData = data.GetProperty("next_items_page");
-            }
-
-            if (!pageData.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
-                throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the board items.");
             foreach (var item in items.EnumerateArray())
             {
-                var assignment = ExtractTimeRecords(item, board.ResponsibleColumnId, null, allowedUsers,
-                    from, to, now, timeZone, records, includeOverlap, quality);
+                var assignment = reader.Read(item, board.ResponsibleColumnId);
                 if (board.Id != settings.BoardId.Trim() ||
                     !item.TryGetProperty("subitems", out var subitems) ||
                     subitems.ValueKind != JsonValueKind.Array)
@@ -247,19 +190,10 @@ public sealed class MondayDirectorySource(
                     var subitemColumnId = subitemBoardId is not null &&
                         subitemBoards.TryGetValue(subitemBoardId, out var schema)
                         ? schema.ResponsibleColumnId : null;
-                    ExtractTimeRecords(subitem, subitemColumnId, assignment, allowedUsers,
-                        from, to, now, timeZone, records, includeOverlap, quality);
+                    reader.Read(subitem, subitemColumnId, assignment);
                 }
             }
-
-            cursor = ReadString(pageData, "cursor");
-            if (string.IsNullOrWhiteSpace(cursor))
-                return;
-            if (!cursors.Add(cursor))
-                throw new ExternalDirectoryException("monday_pagination_repeated", "Monday repeated a pagination cursor.");
         }
-
-        throw new ExternalDirectoryException("monday_pagination_limit", "Monday item pagination exceeded the supported limit.");
     }
 
     private async Task FetchAssignedUserIdsAsync(
@@ -268,32 +202,10 @@ public sealed class MondayDirectorySource(
         ISet<string> assignedIds,
         CancellationToken cancellationToken)
     {
-        var cursors = new HashSet<string>(StringComparer.Ordinal);
-        string? cursor = null;
-        for (var page = 0; page < 500; page++)
+        await foreach (var items in ReadItemPagesAsync(settings, FirstDirectoryItemsQuery,
+            new { ids = new[] { board.Id }, professionalColumn = board.ResponsibleColumnId },
+            NextDirectoryItemsQuery, cancellationToken))
         {
-            using var document = page == 0
-                ? await QueryAsync(settings, FirstDirectoryItemsQuery,
-                    new { ids = new[] { board.Id }, professionalColumn = board.ResponsibleColumnId },
-                    cancellationToken)
-                : await QueryAsync(settings, NextDirectoryItemsQuery, new { cursor = cursor! }, cancellationToken);
-            var data = document.RootElement.GetProperty("data");
-            JsonElement pageData;
-            if (page == 0)
-            {
-                var boards = data.GetProperty("boards");
-                if (boards.GetArrayLength() != 1)
-                    throw new ExternalDirectoryException("monday_board_unavailable",
-                        "The configured Monday board is not available.");
-                pageData = boards[0].GetProperty("items_page");
-            }
-            else
-            {
-                pageData = data.GetProperty("next_items_page");
-            }
-
-            if (!pageData.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
-                throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the board items.");
             foreach (var item in items.EnumerateArray())
             {
                 if (!item.TryGetProperty("column_values", out var columns) || columns.ValueKind != JsonValueKind.Array)
@@ -313,14 +225,34 @@ public sealed class MondayDirectorySource(
                 foreach (var id in personIds)
                     assignedIds.Add(id!);
             }
+        }
+    }
+
+    private async IAsyncEnumerable<JsonElement> ReadItemPagesAsync(
+        MondayDirectoryOptions settings,
+        string firstQuery,
+        object firstVariables,
+        string nextQuery,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var cursors = new HashSet<string>(StringComparer.Ordinal);
+        string? cursor = null;
+        for (var page = 0; page < 500; page++)
+        {
+            using var document = page == 0
+                ? await QueryAsync(settings, firstQuery, firstVariables, cancellationToken)
+                : await QueryAsync(settings, nextQuery, new { cursor = cursor! }, cancellationToken);
+            var data = document.RootElement.GetProperty("data");
+            var pageData = page == 0 ? SingleBoard(document).GetProperty("items_page") : data.GetProperty("next_items_page");
+            if (!pageData.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                throw new ExternalDirectoryException("monday_invalid_response", "Monday did not return the board items.");
+            yield return items;
 
             cursor = ReadString(pageData, "cursor");
-            if (string.IsNullOrWhiteSpace(cursor))
-                return;
+            if (string.IsNullOrWhiteSpace(cursor)) yield break;
             if (!cursors.Add(cursor))
                 throw new ExternalDirectoryException("monday_pagination_repeated", "Monday repeated a pagination cursor.");
         }
-
         throw new ExternalDirectoryException("monday_pagination_limit", "Monday item pagination exceeded the supported limit.");
     }
 
@@ -433,7 +365,7 @@ public sealed class MondayDirectorySource(
         request.Headers.TryAddWithoutValidation("Authorization", settings.Token!.Trim());
         request.Headers.TryAddWithoutValidation("API-Version", settings.ApiVersion);
         request.Content = JsonContent.Create(new { query, variables });
-        using var response = await SendAsync(request, cancellationToken);
+        using var response = await ExternalSourceHttp.SendAsync(httpClient, request, "monday", "Monday", cancellationToken);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         var root = document.RootElement;
@@ -446,133 +378,5 @@ public sealed class MondayDirectorySource(
         return document;
     }
 
-    private static ResponsibleAssignment ExtractTimeRecords(
-        JsonElement item,
-        string? responsibleColumnId,
-        ResponsibleAssignment? inheritedAssignment,
-        HashSet<string> allowedUsers,
-        DateOnly from,
-        DateOnly to,
-        DateTimeOffset now,
-        TimeZoneInfo timeZone,
-        IDictionary<string, ExternalWorkforceTimeRecordSnapshot> records,
-        bool includeOverlap,
-        AnalysisQuality quality)
-    {
-        var itemId = ReadString(item, "id") ?? string.Empty;
-        var itemName = ReadString(item, "name");
-        var itemUrl = ReadString(item, "url");
-        if (item.TryGetProperty("column_values", out var columns) && columns.ValueKind == JsonValueKind.Array)
-        {
-            var responsibleColumn = responsibleColumnId is null
-                ? default
-                : columns.EnumerateArray()
-                    .FirstOrDefault(column => ReadString(column, "id") == responsibleColumnId);
-            var people = responsibleColumn.ValueKind != JsonValueKind.Undefined &&
-                responsibleColumn.TryGetProperty("persons_and_teams", out var peopleValue)
-                ? peopleValue : default;
-            if (people.ValueKind != JsonValueKind.Undefined &&
-                people.ValueKind != JsonValueKind.Array)
-                throw new ExternalDirectoryException("monday_invalid_response",
-                    "Monday returned invalid responsible people.");
-            var responsibleIds = people.ValueKind == JsonValueKind.Array ? people.EnumerateArray()
-                .Where(person => ReadString(person, "kind") == "person")
-                .Select(person => ReadString(person, "id"))
-                .Where(id => id is not null).Distinct(StringComparer.Ordinal).ToArray() : [];
-            var assignment = responsibleIds.Length switch
-            {
-                > 1 => new ResponsibleAssignment(null, true, responsibleIds.Any(id => id is not null && allowedUsers.Contains(id))),
-                1 => new ResponsibleAssignment(responsibleIds[0], false),
-                _ => inheritedAssignment ?? new ResponsibleAssignment(null, false)
-            };
-
-            foreach (var column in columns.EnumerateArray())
-            {
-                if (!column.TryGetProperty("history", out var history) || history.ValueKind != JsonValueKind.Array) continue;
-                var entries = history.EnumerateArray().ToArray();
-                var openCandidates = entries.Count(entry => ReadDate(entry, "started_at") is not null &&
-                    ReadDate(entry, "ended_at") is null && !IsDeleted(entry));
-                var columnRunning = column.TryGetProperty("running", out var runningValue) &&
-                    runningValue.ValueKind == JsonValueKind.True;
-                var columnStartedAt = ReadDate(column, "started_at");
-                foreach (var entry in entries)
-                {
-                    if (IsDeleted(entry)) continue;
-                    var startedAt = ReadDate(entry, "started_at");
-                    var endedAt = ReadDate(entry, "ended_at");
-                    if (startedAt is null || endedAt < startedAt) continue;
-                    var running = endedAt is null && columnRunning &&
-                        (columnStartedAt == startedAt || openCandidates == 1);
-                    if (endedAt is null && !running) continue;
-                    var startedByUserId = ReadString(entry, "started_user_id");
-                    var workDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(startedAt.Value, timeZone).DateTime);
-                    if (workDate > to) continue;
-                    if (workDate < from && (!includeOverlap || endedAt <= TimeAnalysisEngine.StartOfDay(from))) continue;
-                    if (assignment.Ambiguous)
-                    {
-                        if (includeOverlap && assignment.RelevantAmbiguity) quality.HasRelevantAmbiguity = true;
-                        continue;
-                    }
-                    var responsibleId = assignment.IdentityId;
-                    if (responsibleId is null || !allowedUsers.Contains(responsibleId)) continue;
-                    var historyId = ReadString(entry, "id");
-                    var columnId = ReadString(column, "id");
-                    if (historyId is null || columnId is null) continue;
-                    var externalKey = $"{itemId}:{columnId}:{historyId}";
-                    var duration = (long)Math.Max(0, ((endedAt ?? now) - startedAt.Value).TotalSeconds);
-                    var manual = new[]
-                    {
-                        "manually_entered_start_date", "manually_entered_start_time",
-                        "manually_entered_end_date", "manually_entered_end_time"
-                    }.Any(name => entry.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True);
-                    var details = JsonSerializer.Serialize(new { itemId, manual, running, startedByUserId });
-                    records[externalKey] = new ExternalWorkforceTimeRecordSnapshot(
-                        responsibleId, externalKey, workDate, startedAt, endedAt,
-                        (int)Math.Min(duration, int.MaxValue), running ? "running" : "closed",
-                        itemName, itemUrl, details);
-                }
-            }
-            return assignment;
-        }
-        return inheritedAssignment ?? new ResponsibleAssignment(null, false);
-    }
-
     private sealed record MondayBoardSchema(string Id, string? ResponsibleColumnId);
-    private sealed record ResponsibleAssignment(string? IdentityId, bool Ambiguous, bool RelevantAmbiguity = false);
-    private sealed class AnalysisQuality { public bool HasRelevantAmbiguity { get; set; } }
-
-    private static bool IsDeleted(JsonElement entry)
-        => ReadString(entry, "status")?.Contains("deleted", StringComparison.OrdinalIgnoreCase) == true;
-
-    private static DateTimeOffset? ReadDate(JsonElement element, string propertyName)
-        => DateTimeOffset.TryParse(ReadString(element, propertyName), out var value) ? value : null;
-
-    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                response.Dispose();
-                throw new ExternalDirectoryException("monday_http_error", "Monday returned an unsuccessful response.");
-            }
-            return response;
-        }
-        catch (ExternalDirectoryException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-        {
-            throw new ExternalDirectoryException("monday_unreachable", "Monday could not be reached.", exception);
-        }
-    }
-
-    private static string? ReadString(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind == JsonValueKind.Null)
-            return null;
-        return property.ValueKind == JsonValueKind.String ? property.GetString() : property.ToString();
-    }
 }

@@ -47,18 +47,9 @@ public sealed class MeController(AppDbContext db, UserManager<ApplicationUser> u
 
         var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
         if (!result.Succeeded)
-            return ValidationProblem(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["newPassword"] = result.Errors.Select(x => x.Description).ToArray()
-            })
-            { Extensions = { ["code"] = "password_change_failed" } });
+            return IdentityProblem(result, "newPassword", "password_change_failed");
 
-        var sessions = await db.RefreshSessions.Where(x => x.UserId == user.Id && x.RevokedAt == null).ToListAsync(cancellationToken);
-        foreach (var session in sessions)
-        {
-            session.RevokedAt = clock.UtcNow;
-            session.RevocationReason = "password_changed";
-        }
+        await db.RevokeUserSessionsAsync(user.Id, clock.UtcNow, "password_changed", cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await db.InvalidateResetCodesAsync(user.Id, clock.UtcNow, cancellationToken);
         await audit.WriteAsync("auth.password_changed", user.OrganizationId, user.Id, user.Id, ipAddress: IpAddress, cancellationToken: cancellationToken);

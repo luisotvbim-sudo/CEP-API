@@ -2,7 +2,7 @@ using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Identity;
 
-namespace CepApi.Api.Controllers;
+namespace CepApi.Api;
 
 internal static class ApiResponseMappings
 {
