@@ -40,49 +40,43 @@ public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEn
             ? await db.Set<TimeNotificationSchedule>().AsNoTracking().Where(x => !x.IsDeleted && x.IsEnabled).ToListAsync(cancellationToken) : [];
         var organizations = await db.Organizations.AsNoTracking().Where(x => x.Status == OrganizationStatus.Active &&
             db.WorkforcePeople.Any(p => p.OrganizationId == x.Id && p.UserId != null)).Select(x => x.Id).ToArrayAsync(cancellationToken);
-        var reportKey = $"report:{today:yyyy-MM-dd}";
-        var scheduledKeys = schedules.ToDictionary(schedule => schedule.Id,
-            schedule => $"schedule:{schedule.Id}:{today:yyyy-MM-dd}");
-        var candidateKeys = scheduledKeys.Values.Append(reportKey).ToArray();
+        // Compute due slots once. Enabling/changing settings never replays earlier slots.
+        // The report has no popup and runs every civil day, including weekends.
+        var dueSlots = new List<(string Key, TimeNotificationSchedule? Schedule, DateTimeOffset At)>
+        {
+            ($"report:{today:yyyy-MM-dd}", null, midnight)
+        };
+        foreach (var schedule in schedules)
+        {
+            var due = midnight.Add(schedule.LocalTime.ToTimeSpan());
+            if (due <= now && due >= settings.UpdatedAt)
+                dueSlots.Add(($"schedule:{schedule.Id}:{today:yyyy-MM-dd}", schedule, due));
+        }
+        var candidateKeys = dueSlots.Select(slot => slot.Key).ToArray();
         var existing = await db.Set<TimeNotificationDispatch>().AsNoTracking()
             .Where(x => organizations.Contains(x.OrganizationId) && candidateKeys.Contains(x.DeduplicationKey))
             .Select(x => new { x.OrganizationId, x.DeduplicationKey }).ToListAsync(cancellationToken);
         var keys = existing.Select(x => (x.OrganizationId, x.DeduplicationKey)).ToHashSet();
         foreach (var organizationId in organizations)
-        {
-            // The report is generated once per civil day, also on weekends. No popup.
-            AddScheduledDispatch(organizationId, reportKey, null, midnight, true, settings, keys);
-            foreach (var schedule in schedules)
+            foreach (var (key, schedule, due) in dueSlots)
             {
-                var due = midnight.Add(schedule.LocalTime.ToTimeSpan());
-                // Catch up this civil day's due slots even after slow upstream calls.
-                // Preserve the original cutoff; clients group delayed receipts. Enabling
-                // or changing settings does not replay earlier slots from that day.
-                if (now < due || due < settings.UpdatedAt) continue;
-                AddScheduledDispatch(organizationId, scheduledKeys[schedule.Id], schedule, due, false, settings, keys);
+                if (!keys.Add((organizationId, key))) continue;
+                db.Add(new TimeNotificationDispatch
+                {
+                    OrganizationId = organizationId,
+                    DeduplicationKey = key,
+                    RequestHash = "scheduled",
+                    Message = schedule?.Message ?? "Relatório do dia anterior",
+                    ScheduleId = schedule?.Id,
+                    Kind = schedule?.Kind,
+                    Period = schedule is null || schedule.Kind == NotificationScheduleKind.PreviousDay ? AnalysisPeriod.PreviousDay : AnalysisPeriod.Daily,
+                    ReportOnly = schedule is null,
+                    CreatedAt = due,
+                    ToleranceMinutes = settings.ToleranceMinutes,
+                    SettingsVersion = settings.Version
+                });
             }
-        }
         await db.SaveChangesAsync(cancellationToken);
-    }
-
-    private void AddScheduledDispatch(Guid organizationId, string key, TimeNotificationSchedule? schedule, DateTimeOffset at,
-        bool reportOnly, TimeControlSettings settings, HashSet<(Guid, string)> keys)
-    {
-        if (!keys.Add((organizationId, key))) return;
-        db.Add(new TimeNotificationDispatch
-        {
-            OrganizationId = organizationId,
-            DeduplicationKey = key,
-            RequestHash = "scheduled",
-            Message = schedule?.Message ?? "Relatório do dia anterior",
-            ScheduleId = schedule?.Id,
-            Kind = schedule?.Kind,
-            Period = reportOnly || schedule?.Kind == NotificationScheduleKind.PreviousDay ? AnalysisPeriod.PreviousDay : AnalysisPeriod.Daily,
-            ReportOnly = reportOnly,
-            CreatedAt = at,
-            ToleranceMinutes = settings.ToleranceMinutes,
-            SettingsVersion = settings.Version
-        });
     }
 
     private async Task ProcessAsync(TimeNotificationDispatch dispatch, CancellationToken cancellationToken)

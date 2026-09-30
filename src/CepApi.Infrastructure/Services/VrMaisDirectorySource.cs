@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using CepApi.Application;
 using CepApi.Domain;
 using Microsoft.Extensions.Options;
+using static CepApi.Infrastructure.Services.ExternalSourceJson;
 
 namespace CepApi.Infrastructure.Services;
 
@@ -240,13 +241,6 @@ public sealed class VrMaisDirectorySource(
         return status is null || !status.Equals("inactive", StringComparison.OrdinalIgnoreCase) &&
             !status.Equals("inativo", StringComparison.OrdinalIgnoreCase) &&
             !status.Equals("dismissed", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string? ReadString(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind == JsonValueKind.Null)
-            return null;
-        return property.ValueKind == JsonValueKind.String ? property.GetString() : property.ToString();
     }
 
     private sealed record VrDay(int? DurationSeconds, string[] TimeCards);

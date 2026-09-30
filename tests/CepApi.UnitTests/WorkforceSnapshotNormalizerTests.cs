@@ -36,6 +36,37 @@ public sealed class WorkforceSnapshotNormalizerTests
     }
 
     [Fact]
+    public void Normalization_preserves_source_values_and_does_not_mutate_the_input()
+    {
+        var day = new DateOnly(2026, 9, 20);
+        var startedAt = new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero);
+        var original = new ExternalWorkforceTimeRecordSnapshot(" 42 ", " session ", day, startedAt, startedAt.AddHours(1),
+            3600, " CLOSED ", " Title ", "http://insecure.test", "{\"manual\":true}");
+        var normalized = Assert.Single(WorkforceSnapshotNormalizer.NormalizeTime(new(day, day, [original], false)));
+        Assert.Equal(original with
+        {
+            ExternalIdentityId = "42",
+            ExternalKey = "session",
+            State = "closed",
+            Title = "Title",
+            Url = null
+        }, normalized);
+        Assert.Equal(" 42 ", original.ExternalIdentityId);
+        Assert.Equal(" CLOSED ", original.State);
+        Assert.Equal("http://insecure.test", original.Url);
+    }
+
+    [Fact]
+    public void Identifiers_that_collide_after_truncation_are_rejected()
+    {
+        var prefix = new string('a', 200);
+        var snapshot = new ExternalWorkforceDirectorySnapshot(
+            [new(prefix + "1", "First", null, true), new(prefix + "2", "Second", null, true)], true);
+        var exception = Assert.Throws<ExternalDirectoryException>(() => WorkforceSnapshotNormalizer.NormalizeDirectory(snapshot));
+        Assert.Equal("directory_duplicate_id", exception.Code);
+    }
+
+    [Fact]
     public void Time_snapshot_rejects_records_outside_requested_period()
     {
         var snapshot = CreateTimeSnapshot(

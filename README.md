@@ -127,6 +127,8 @@ As decisões compartilhadas ficam nestes pontos:
 
 Os controllers coordenam a entrada HTTP; as regras compartilhadas devem ser alteradas nesses pontos para evitar decisões divergentes entre endpoints.
 
+Na importação, `WorkforceSnapshotNormalizer` valida e normaliza cópias dos snapshots imutáveis recebidos. `WorkforceSnapshotWriter` usa o mesmo mapeamento para criar ou atualizar cada entidade. O período de sincronização fica em `WorkforceHistoryPolicy`. A integração Monday separa a consulta e a paginação da interpretação das sessões, feita por `MondayTimeSnapshotReader` com um contexto por consulta. O agendador calcula os horários devidos uma vez por ciclo e usa as mesmas regras para todas as organizações.
+
 ```bash
 dotnet build CEP-API.sln -m:1
 dotnet test tests/CepApi.UnitTests
