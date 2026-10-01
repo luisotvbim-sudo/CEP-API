@@ -36,6 +36,11 @@ internal static class RateLimitingRegistration
                 configuration.GetValue("RateLimiting:AccountPerMinute", 10),
                 TimeSpan.FromMinutes(1),
                 segments: 6));
+            options.AddPolicy("power-unlock", context => SlidingWindow(
+                context.User.FindFirstValue("sub") ?? ClientAddress(context),
+                configuration.GetValue("RateLimiting:PowerUnlockPerMinute", 5),
+                TimeSpan.FromMinutes(1),
+                segments: 6));
         });
     }
 

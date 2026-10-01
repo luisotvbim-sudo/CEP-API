@@ -47,6 +47,7 @@ public static class DependencyInjection
             .AddDefaultTokenProviders();
 
         services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<PowerPinHasher>();
         services.AddSingleton<ISecurityCodeService, SecurityCodeService>();
         services.AddSingleton<JwtKeyRing>();
         services.AddSingleton<ITokenService, JwtTokenService>();

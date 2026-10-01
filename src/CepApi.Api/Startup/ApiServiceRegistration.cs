@@ -17,6 +17,7 @@ internal static class ApiServiceRegistration
         builder.Services.AddExceptionHandler<ApiExceptionHandler>();
         builder.Services.AddScoped<AuthenticationSessionService>();
         builder.Services.AddScoped<CredentialAuthenticationService>();
+        builder.Services.AddScoped<PowerActionUnlockService>();
         builder.Services.AddScoped<RefreshTokenSessionService>();
         builder.Services.AddScoped<InvitationService>();
         builder.Services.AddScoped<WebSessionCookie>();

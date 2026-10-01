@@ -61,6 +61,12 @@ if (args.Contains("bootstrap-admin", StringComparer.OrdinalIgnoreCase))
     return;
 }
 
+if (args.Contains("configure-power-pin", StringComparer.OrdinalIgnoreCase))
+{
+    await PowerPinProvisioning.RunAsync(app.Services);
+    return;
+}
+
 await app.RunAsync();
 
 public partial class Program;

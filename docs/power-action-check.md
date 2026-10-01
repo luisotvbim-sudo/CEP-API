@@ -4,22 +4,25 @@ Contrato do backend para o desktop CEP Horas. Não executa ações no Windows, n
 
 - `POST /api/v1/me/time-control/power-action-check`, corpo obrigatório `{ "action": "shutdown" | "restart" | "hibernate" }`.
 - `GET /api/v1/me/time-control/power-action-status?action=shutdown`, para o menu. `action` é opcional, padrão `shutdown`. Usa exatamente a mesma decisão.
+- `POST /api/v1/me/time-control/power-action-unlock`: [PIN dedicado e janela individual de 5 minutos](power-admin-unlock.md). Uma janela ativa libera as três ações antes de consultar fontes; fora dela a análise normal permanece.
 - Autenticação Bearer obrigatória. Nenhuma das rotas aceita seleção de pessoa, usuário, organização ou período. O servidor consulta somente a pessoa associada ao usuário autenticado na sua organização ativa, sem exigir papel de coordenador ou vínculo de time.
 
 O período é o dia civil atual em America/Sao_Paulo, até um corte único capturado antes das consultas. As fontes são consultadas ao vivo somente para as identidades da pessoa; relatórios antigos e histórico importado não liberam a ação. Usa o mesmo serviço de análise das notificações, motor de domínio e versão/tolerância global vigente. A decisão vale somente para o instante retornado; o desktop refaz o POST quando o usuário solicita a ação.
 
 ## Resposta HTTP 200
 
-Todos os campos são obrigatórios, exceto que `analysis` pode ser null quando a pessoa não está associada ou suas identidades estão inativas:
+Todos os campos são obrigatórios. `analysis` pode ser null quando existe override ativo, a pessoa não está associada ou suas identidades estão inativas:
 
 ```text
 PowerActionCheckResponse {
   action: "shutdown" | "restart" | "hibernate",
   decision: "allowed" | "blocked" | "indeterminate",
   code: "within_tolerance" | "above_tolerance" | "analysis_incomplete"
-        | "workforce_person_not_associated" | "external_identity_inactive",
+        | "workforce_person_not_associated" | "external_identity_inactive" | "administrative_override",
   message: string,
-  analysis: TimeAnalysisResponse | null
+  analysis: TimeAnalysisResponse | null,
+  override: boolean,
+  unlockedUntil: date-time|null
 }
 TimeAnalysisResponse {
   from: date (YYYY-MM-DD), to: date, cutoff: date-time,
@@ -52,4 +55,4 @@ TimeAnalysisResponse {
 
 Falha das fontes externas esperada retorna 200 `indeterminate`, com código por fonte; não representa API offline. HTTP 200 não significa liberação: verificar `decision`. Erros HTTP, resposta inválida, autenticação negada ou regra negada não devem ser convertidos em contingência offline. A contingência local que permite a ação quando a API está realmente inacessível é responsabilidade do desktop, fora deste contrato.
 
-O OpenAPI gerado em `/swagger/v1/swagger.json` descreve os DTOs e as duas rotas. Esta entrega não requer migration.
+O OpenAPI gerado em `/swagger/v1/swagger.json` descreve os DTOs e as rotas. A extensão de PIN exige a migration `PowerActionOverrides` e provisionamento seguro antes de liberar o endpoint de desbloqueio.

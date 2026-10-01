@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using CepApi.Application;
 using CepApi.Domain;
+using CepApi.Api.Services;
 using CepApi.Infrastructure.Persistence;
 using CepApi.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -19,8 +20,21 @@ namespace CepApi.Api.Controllers;
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError)]
-public sealed class PowerActionController(AppDbContext db, IClock clock, FreshTimeAnalysisService analysis) : ApiControllerBase
+public sealed class PowerActionController(AppDbContext db, IClock clock, FreshTimeAnalysisService analysis,
+    PowerActionUnlockService unlock) : ApiControllerBase
 {
+    [HttpPost("power-action-unlock")]
+    [EnableRateLimiting("power-unlock")]
+    [ProducesResponseType<PowerActionUnlockResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<PowerActionUnlockResponse>> Unlock([FromBody, Required] PowerActionUnlockRequest request, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (CurrentOrganizationId is not { } organizationId)
+            return ApiProblem(403, "An operational organization is required.", "forbidden");
+        return Ok(await unlock.UnlockAsync(organizationId, CurrentUserId, request.Pin, IpAddress, cancellationToken));
+    }
+
     [HttpPost("power-action-check")]
     public Task<ActionResult<PowerActionCheckResponse>> Check([FromBody, Required] PowerActionCheckRequest request, CancellationToken cancellationToken)
         => DecideAsync(request.Action, cancellationToken);
@@ -36,6 +50,10 @@ public sealed class PowerActionController(AppDbContext db, IClock clock, FreshTi
             return ApiProblem(400, "Action must be shutdown, restart or hibernate.", "invalid_power_action");
         if (CurrentOrganizationId is not { } organizationId)
             return ApiProblem(403, "An operational organization is required.", "forbidden");
+
+        if (await unlock.GetActiveUntilAsync(organizationId, CurrentUserId, cancellationToken) is { } unlockedUntil)
+            return Ok(new PowerActionCheckResponse(action, "allowed", "administrative_override",
+                "Ação liberada temporariamente pelo PIN administrativo.", null, true, unlockedUntil));
 
         var person = await db.ActiveNotificationRecipients(organizationId, CurrentUserId).AsNoTracking()
             .Include(x => x.MondayIdentity).Include(x => x.VrMaisIdentity).SingleOrDefaultAsync(cancellationToken);

@@ -29,6 +29,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     {
         base.OnModelCreating(builder);
         TimeNotificationModel.Configure(builder);
+        PowerActionModel.Configure(builder);
 
         IdentityModel.Configure(builder);
         OrganizationAccessModel.Configure(builder);

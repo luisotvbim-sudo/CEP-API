@@ -8,6 +8,8 @@ A sessão web do CEP Horas pode persistir por até sete dias usando cookie HttpO
 
 O desktop pode consultar a [liberação de ações de energia](docs/power-action-check.md) por usuário autenticado. O backend compara as fontes ao vivo com a tolerância global e distingue liberação, bloqueio e análise inconclusiva. O contrato gerado está em [openapi-current.json](docs/openapi-current.json).
 
+Um [PIN dedicado, compartilhado e provisionado no backend](docs/power-admin-unlock.md) pode liberar as três ações por 5 minutos somente para o solicitante. A configuração guarda hash forte; não utiliza senhas de login. Provisionamento e rotação exigem terminal administrativo sem eco e migration explícita.
+
 - Organizações isoladas, com estados ativo, suspenso e arquivado.
 - Papéis `SystemAdmin`, `OrganizationAdmin` e `User`.
 - Convites e recuperação de senha por SMTP, sem cadastro público.

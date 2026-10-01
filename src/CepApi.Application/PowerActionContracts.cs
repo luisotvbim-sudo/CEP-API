@@ -3,7 +3,18 @@ using System.ComponentModel.DataAnnotations;
 namespace CepApi.Application;
 
 public sealed record PowerActionCheckRequest([Required] string Action);
-public sealed record PowerActionCheckResponse(string Action, string Decision, string Code, string Message, TimeAnalysisResponse? Analysis);
+public sealed record PowerActionCheckResponse(string Action, string Decision, string Code, string Message, TimeAnalysisResponse? Analysis,
+    bool Override = false, DateTimeOffset? UnlockedUntil = null);
+
+// A class avoids a record's generated ToString printing its secret property.
+public sealed class PowerActionUnlockRequest
+{
+    [Required, RegularExpression("^[0-9]{6}$")]
+    public string Pin { get; set; } = "";
+    public override string ToString() => "PowerActionUnlockRequest [redacted]";
+}
+
+public sealed record PowerActionUnlockResponse(bool Override, DateTimeOffset UnlockedUntil, DateTimeOffset ServerTime);
 
 public static class PowerActionDecision
 {

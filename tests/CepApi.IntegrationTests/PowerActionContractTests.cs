@@ -37,8 +37,13 @@ public sealed class PowerActionContractTests
         foreach (var field in new[] { "action", "decision", "code", "message", "analysis" })
             Assert.True(schemas.GetProperty("PowerActionCheckResponse").GetProperty("properties").TryGetProperty(field, out _));
         var responseSchema = schemas.GetProperty("PowerActionCheckResponse");
-        Assert.Equal(5, responseSchema.GetProperty("required").GetArrayLength());
+        Assert.Equal(7, responseSchema.GetProperty("required").GetArrayLength());
         Assert.Equal(3, responseSchema.GetProperty("properties").GetProperty("decision").GetProperty("enum").GetArrayLength());
         Assert.True(responseSchema.GetProperty("properties").GetProperty("analysis").GetProperty("nullable").GetBoolean());
+        var unlock = root.GetProperty("paths").GetProperty("/api/v1/me/time-control/power-action-unlock").GetProperty("post");
+        Assert.True(unlock.GetProperty("responses").TryGetProperty("503", out _));
+        var pin = schemas.GetProperty("PowerActionUnlockRequest").GetProperty("properties").GetProperty("pin");
+        Assert.True(pin.GetProperty("writeOnly").GetBoolean());
+        Assert.Equal("^[0-9]{6}$", pin.GetProperty("pattern").GetString());
     }
 }
