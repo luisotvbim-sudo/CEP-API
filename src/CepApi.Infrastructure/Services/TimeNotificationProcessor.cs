@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Persistence;
@@ -8,6 +7,8 @@ namespace CepApi.Infrastructure.Services;
 
 public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEnumerable<IExternalWorkforceTimeSource> sources)
 {
+    private readonly FreshTimeAnalysisService freshAnalysis = new(clock, sources);
+
     public async Task TickAsync(CancellationToken cancellationToken)
     {
         // Session lock survives source calls without holding a long database transaction.
@@ -98,7 +99,7 @@ public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEn
             .Include(x => x.MondayIdentity).Include(x => x.VrMaisIdentity).ToListAsync(cancellationToken);
         // Captured at enqueue: every recipient and both sources share the same cutoff.
         var window = TimeAnalysisEngine.ResolvePeriod(dispatch.Period, dispatch.CreatedAt);
-        var (snapshots, sourceStates) = await FetchSourcesAsync(people, window, cancellationToken);
+        var (snapshots, sourceStates) = await freshAnalysis.FetchAsync(people, window, cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         if (dispatch.ScheduleId.HasValue)
         {
@@ -123,75 +124,14 @@ public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEn
         await transaction.CommitAsync(cancellationToken);
     }
 
-    private async Task<(Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot> Snapshots,
-        List<TimeAnalysisSourceResponse> States)> FetchSourcesAsync(
-        IReadOnlyCollection<WorkforcePerson> people, AnalysisWindow window, CancellationToken cancellationToken)
-    {
-        var snapshots = new Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot>();
-        var sourceStates = new List<TimeAnalysisSourceResponse>();
-        foreach (var source in sources)
-        {
-            var ids = people.Select(p => source.Source == ExternalWorkforceSource.Monday ? p.MondayIdentity : p.VrMaisIdentity)
-                .Where(x => x.IsActive).Select(x => x.ExternalId).Distinct().ToArray();
-            if (ids.Length == 0)
-            {
-                sourceStates.Add(new(source.Source, "incomplete", "source_scope_empty", clock.UtcNow));
-                continue;
-            }
-            try
-            {
-                var snapshot = source is IExternalWorkforceOverlapTimeSource overlap
-                    ? await overlap.FetchIncludingOverlapAsync(window.From, window.To, ids, cancellationToken)
-                    : await source.FetchAsync(window.From, window.To, ids, cancellationToken);
-                snapshots[source.Source] = snapshot;
-                sourceStates.Add(new(source.Source, snapshot.Complete ? "complete" : "incomplete", null, clock.UtcNow));
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception) when (exception is ExternalDirectoryException or HttpRequestException or TaskCanceledException or JsonException)
-            {
-                var errorCode = exception is ExternalDirectoryException external ? external.Code : "source_unavailable";
-                sourceStates.Add(new(source.Source, "incomplete", errorCode, clock.UtcNow));
-            }
-        }
-        return (snapshots, sourceStates);
-    }
-
     private void CreateReports(TimeNotificationDispatch dispatch, IReadOnlyCollection<WorkforcePerson> people,
         AnalysisWindow window, Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot> snapshots,
         List<TimeAnalysisSourceResponse> sourceStates)
     {
-        var recordsBySource = snapshots.ToDictionary(pair => pair.Key,
-            pair => pair.Value.Records.ToLookup(record => record.ExternalIdentityId, StringComparer.Ordinal));
         foreach (var person in people)
         {
-            var records = new List<WorkforceTimeRecord>();
-            foreach (var (source, sourceRecords) in recordsBySource)
-            {
-                var identity = source == ExternalWorkforceSource.Monday ? person.MondayIdentity : person.VrMaisIdentity;
-                records.AddRange(sourceRecords[identity.ExternalId].Select(r => new WorkforceTimeRecord
-                {
-                    OrganizationId = person.OrganizationId,
-                    ExternalIdentityId = identity.Id,
-                    Source = source,
-                    ExternalKey = r.ExternalKey,
-                    WorkDate = r.WorkDate,
-                    StartedAt = r.StartedAt,
-                    EndedAt = r.EndedAt,
-                    DurationSeconds = r.DurationSeconds,
-                    State = r.State,
-                    Title = r.Title,
-                    DetailsJson = r.DetailsJson,
-                    LastSyncedAt = clock.UtcNow
-                }));
-            }
-            var complete = snapshots.Count == 2 && snapshots.Values.All(x => x.Complete && x.From <= window.From && x.To >= window.To) &&
-                person.MondayIdentity.IsActive && person.VrMaisIdentity.IsActive;
-            var analysis = TimeAnalysisEngine.Analyze(window.From, window.To, window.Cutoff, dispatch.ToleranceMinutes, records, complete);
-            var response = new TimeAnalysisResponse(analysis.From, analysis.To, analysis.Cutoff, analysis.ToleranceMinutes, analysis.Days,
-                analysis.VrSeconds, analysis.MondaySeconds, analysis.DeltaSeconds, analysis.AbsoluteDivergenceSeconds, analysis.HasIssues, dispatch.SettingsVersion, sourceStates);
+            var response = freshAnalysis.Analyze(person, window, dispatch.ToleranceMinutes, dispatch.SettingsVersion, snapshots, sourceStates);
+            var analysis = response;
             var report = new TimeAnalysisReport
             {
                 OrganizationId = person.OrganizationId,

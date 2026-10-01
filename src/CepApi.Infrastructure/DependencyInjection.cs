@@ -65,6 +65,7 @@ public static class DependencyInjection
         services.AddScoped<IExternalWorkforceTimeSource>(provider => provider.GetRequiredService<VrMaisDirectorySource>());
         services.AddScoped<EmailOutboxDispatcher>();
         services.AddScoped<TimeNotificationProcessor>();
+        services.AddScoped<FreshTimeAnalysisService>();
         if (configuration.GetValue("TimeNotifications:WorkerEnabled", true))
             services.AddHostedService<TimeNotificationWorker>();
         if (configuration.GetValue("EmailOutbox:Enabled", true))

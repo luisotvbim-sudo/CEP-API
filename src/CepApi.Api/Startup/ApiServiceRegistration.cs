@@ -43,6 +43,7 @@ internal static class ApiServiceRegistration
         {
             options.SwaggerDoc("v1", new OpenApiInfo { Title = "CEP API", Version = "v1" });
             options.OperationFilter<OrganizationScopeOperationFilter>();
+            options.SchemaFilter<PowerActionSchemaFilter>();
             options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 Name = "Authorization",

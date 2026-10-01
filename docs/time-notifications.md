@@ -41,6 +41,8 @@ SystemAdmin passa `organizationId` nas rotas organizacionais. “Todos” signif
 
 ## Limites explícitos
 
+A análise ao vivo também atende a [verificação de ações de energia](power-action-check.md). As duas rotas pessoais reutilizam `FreshTimeAnalysisService` e `TimeAnalysisEngine`, sem gerar relatórios ou notificações.
+
 - O agendador recupera horários devidos do mesmo dia civil após consulta lenta ou indisponibilidade, preservando o corte original; cliente identifica atraso e agrupa popups. Habilitação/alteração da configuração global não recria horários anteriores à alteração. Execuções de dias anteriores que nunca foram enfileiradas não são reconstruídas. Notificações já geradas no servidor continuam pendentes e são recuperadas integralmente, independentemente do dia.
 - Não há calendário de feriados/férias aprovado. A restrição implementada é sábado/domingo para agendas. Envios manuais continuam disponíveis.
 - Dias sem dados VR não viram zero. Sem calendário de dias dispensados, uma semana/sprint com dias incompletos pode não ter saldo agregado conclusivo; os valores e ocorrências diários continuam visíveis.
