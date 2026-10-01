@@ -45,7 +45,9 @@ public sealed class PowerActionUnlockService(AppDbContext db, IClock clock, IAud
             throw new ApiProblemException(403, "PIN administrativo inválido.", "invalid_admin_pin");
         }
 
-        var now = clock.UtcNow;
+        // PostgreSQL timestamps preserve microseconds. Return exactly the same
+        // instant that will be read back, including at the expiry boundary.
+        var now = new DateTimeOffset(clock.UtcNow.UtcTicks / 10 * 10, TimeSpan.Zero);
         var grant = await db.Set<PowerActionOverride>().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (grant is null)
         {
