@@ -1,10 +1,10 @@
 # Análises e notificações — implementação
 
-Contrato funcional aprovado: [regras do produto](conciliacao-horas/contrato-analises-notificacoes.md). Este documento descreve a implementação desta branch, não a versão atualmente implantada na VM.
+Contrato funcional aprovado: [regras do produto](conciliacao-horas/contrato-analises-notificacoes.md). Revisão: 04/10/2026, código base `b36c6e149b42253b44860d98c6ffe44f98c53dd6`. Descreve os componentes versionados; versão implantada e funcionamento do worker exigem verificação operacional.
 
 ## Motor e armazenamento
 
-`TimeAnalysisEngine` é o único motor de períodos/cálculos. São Paulo define o dia de negócio; instantes persistidos permanecem UTC. A infraestrutura lê as duas fontes com o mesmo corte, inclui cronômetros sobrepostos e armazena o resultado individual. Sem fonte completa não há afirmação de coerência. Semana começa segunda-feira; sprint 1–14 e 15–fim do mês, limitada ao instante do pedido. Valores usam segundos; tolerância global inicial de **30 minutos**, simétrica, com ocorrência apenas acima do limite. Saldos opostos não anulam a divergência absoluta.
+`TimeAnalysisEngine` é o único motor de períodos/cálculos. São Paulo define o dia de negócio; instantes persistidos permanecem UTC. A infraestrutura lê as duas fontes com o mesmo corte, inclui sessões que cruzam as fronteiras do período e armazena o resultado individual. Deduplica mesma chave externa, mas soma intervalos de sessões distintas, mesmo se simultâneos. Cada total agregado exige todos os seus valores diários disponíveis; saldo/divergência absoluta exigem todos os dias com diferença calculável. Sem fonte completa não há afirmação de coerência. Semana começa segunda-feira; sprint 1–14 e 15–fim do mês, limitada ao instante do pedido. Valores usam segundos; tolerância global inicial de **30 minutos**, simétrica, com ocorrência apenas acima do limite. Saldos opostos não anulam a divergência absoluta.
 
 A migration `GlobalTimeAnalysisNotifications` cria o schema `time_control` e tabelas `app_settings`, `notification_schedules`, `notification_dispatches`, `analysis_reports`, `notifications`. Configurações/agendas são globais; relatórios, envios e destinatários permanecem organizacionais. A migration concede ao papel runtime somente acesso aos dados, inclusive em instalações existentes.
 
@@ -47,7 +47,7 @@ A análise ao vivo também atende a [verificação de ações de energia](power-
 - Não há calendário de feriados/férias aprovado. A restrição implementada é sábado/domingo para agendas. Envios manuais continuam disponíveis.
 - Dias sem dados VR não viram zero. Sem calendário de dias dispensados, uma semana/sprint com dias incompletos pode não ter saldo agregado conclusivo; os valores e ocorrências diários continuam visíveis.
 - Relatórios são snapshots imutáveis, consultados por data de geração; não há workflow de justificativa/aprovação nesta entrega. Consulta da lista não atualiza fontes. Novos envios e execuções produzem nova análise.
-- Não foi implementado bloqueio de desligamento, assinatura do instalador ou atualização MSIX nesta entrega.
+- Execução de energia, distribuição e atualização MSI pertencem ao CEP-FRONT. A API somente fornece a decisão de energia; este contrato de notificações não determina o estado publicado do instalador.
 
 ## Publicação
 

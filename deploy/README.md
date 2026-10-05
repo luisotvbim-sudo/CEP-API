@@ -1,6 +1,6 @@
-# Preparação da VM
+# Procedimento de produção
 
-Para atualização diária às 02h (São Paulo), veja [o agendador da VM](nightly/README.md). Ele instala apenas commits aprovados na CI, com backup antes da troca; alterações de schema/infraestrutura ficam para manutenção revisada.
+Para atualização diária às 02h (São Paulo), veja [o agendador da VM](nightly/README.md). O script aceita somente commits aprovados na CI, faz backup antes da troca e aplica migrations explicitamente. Alterações incompatíveis de schema/infraestrutura exigem manutenção revisada e controle do timer. Este guia descreve a configuração versionada, sem confirmar instalação/estado atual da VM.
 
 Use `compose.production.yaml` sozinho, sem combiná-lo com `compose.yaml`. Ele cria Nginx, API, PostgreSQL e uma tarefa de migração. Somente 443 é publicada. O banco não possui porta no host; a API executa como UID 1654, com filesystem somente leitura e volume separado para Data Protection.
 

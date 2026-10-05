@@ -1,6 +1,6 @@
 # Ativação de convite — contrato frontend
 
-Implementado na branch `codex/invitation-activation`. Requer publicação do backend antes do frontend; sem migration.
+Contrato implementado na base revisada em 04/10/2026. O frontend consumidor deve usar backend com esta rota publicada; verificar a versão efetivamente implantada. A rota não altera schema.
 
 ## Experiência
 

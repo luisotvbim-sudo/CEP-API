@@ -20,4 +20,4 @@ O frontend e `/api` devem estar na mesma origem. O proxy deve preservar Host, Or
 
 Cookies são compartilhados por abas. O cliente deve serializar login, refresh e logout entre todas as abas (Web Locks), além de compartilhar encerramento/troca de conta. Reutilizar cookie anterior após rotação revoga a família, assim como no contrato nativo. Se a resposta de refresh se perder, exigir novo login, sem repetir o refresh automaticamente. Não guardar senha ou tokens em localStorage/sessionStorage/IndexedDB.
 
-Publique essas rotas antes do frontend que as consome e atualize seu OpenAPI. Usuários do frontend antigo precisam entrar uma vez para criar o cookie persistente. Testes de integração cobrem persistência, atributos do cookie, prazo fixo, revogação, replay, adulteração e bloqueio de requisições de outra origem.
+O frontend exige backend com essas rotas publicadas e OpenAPI correspondente. Na alteração deste fluxo, verificar persistência, atributos do cookie, prazo absoluto, revogação, replay, adulteração e bloqueio de requisições de outra origem. A revisão documental não registra nova execução de testes ou publicação.

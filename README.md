@@ -1,137 +1,66 @@
 # CEP API
 
-Backend multiempresa para administrar usuários dos plugins Revit e ZWCAD e a aplicação de conciliação de horas. A solução usa ASP.NET Core 10, PostgreSQL, ASP.NET Core Identity, access tokens JWT, refresh tokens rotativos e grants offline RS256 de 72 horas.
+Backend multiempresa em ASP.NET Core 10, Identity, EF Core e PostgreSQL. Atende administração de organizações/usuários/produtos, autorização dos plugins Revit/ZWCAD e CEP Horas: integrações Monday/VR Mais, histórico, análises, notificações e decisões de energia para o desktop.
 
-## Recursos
+Comece por [AGENTS.md](AGENTS.md), [contexto atual](docs/CONTEXTO-ATUAL.md) e [índice da documentação](docs/README.md). A [especificação funcional](docs/conciliacao-horas/especificacao-funcional.md) distingue implementação da visão futura; [decisões e pendências](docs/DECISOES-PENDENCIAS.md) registra o que permanece aberto. Coordenação transversal: [CEP-ORQUESTRADOR](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR).
 
-A sessão web do CEP Horas pode persistir por até sete dias usando cookie HttpOnly. Consulte o [contrato de sessão do navegador](docs/browser-sessions.md) antes de configurar o proxy ou integrar o frontend.
+## Funcionamento atual
 
-O desktop pode consultar a [liberação de ações de energia](docs/power-action-check.md) por usuário autenticado. O backend compara as fontes ao vivo com a tolerância global e distingue liberação, bloqueio e análise inconclusiva. O contrato gerado está em [openapi-current.json](docs/openapi-current.json).
+- Isolamento por organização, papéis SystemAdmin/OrganizationAdmin/User e acesso de membro/líder recalculado pelos vínculos vigentes hoje.
+- Login nativo com JWT RS256 e refresh rotativo; [sessão web](docs/browser-sessions.md) de até sete dias com cookie protegido de mesma origem. Revogação da família e versão de segurança são verificadas no bearer.
+- Convites sem cadastro público, [ativação sem sessão](docs/invitation-activation.md), [reenvio administrativo](docs/people-invitation-resend.md), recuperação e outbox SMTP transacional.
+- [Associação/importação](docs/workforce-admin-integration.md) por IDs Monday/VR; atualização normal de 7 dias e inicial/full administrativa de 90 dias. Fontes falham independentemente.
+- [Histórico diário](docs/workforce-daily-history.md) importado e [motor/relatórios/notificações](docs/time-notifications.md) com corte único São Paulo, tolerância global inicial de 30 minutos e valores desconhecidos nulos. GET análises lê snapshots; não atualiza fontes.
+- [Energia](docs/power-action-check.md) decidida pela API; [PIN dedicado](docs/power-admin-unlock.md) abre liberação individual de cinco minutos. A execução Windows pertence ao CEP-FRONT.
+- [Grants dos plugins](docs/plugin-integration.md) de no máximo 72 horas; existência deste contrato não comprova consumo pelos plugins reais.
 
-Um [PIN dedicado, compartilhado e provisionado no backend](docs/power-admin-unlock.md) pode liberar as três ações por 5 minutos somente para o solicitante. A configuração guarda hash forte; não utiliza senhas de login. Provisionamento e rotação exigem terminal administrativo sem eco e migration explícita.
+Calendário completo, workflow de justificativas/casos, ranking avançado e exportações não são capacidades completas atuais. Código, GitHub e versão implantada devem ser conferidos separadamente.
 
-- Organizações isoladas, com estados ativo, suspenso e arquivado.
-- Papéis `SystemAdmin`, `OrganizationAdmin` e `User`.
-- Convites e recuperação de senha por SMTP, sem cadastro público.
-- Acesso separado aos produtos Revit e ZWCAD.
-- Sessões revogáveis, lockout, rate limiting e detecção de reutilização de refresh token.
-- Sessão web com refresh token protegido em cookie `HttpOnly`, `Secure` e `SameSite=Strict`.
-- Auditoria administrativa, JWKS público, Swagger e health checks.
-- Times do CEP Horas e vínculos temporais de membros e líderes.
-- Migrations explícitas, testes unitários e fluxo de integração com PostgreSQL real.
+## Desenvolvimento com containers
 
-## Controle de ponto
-
-A primeira etapa do backend implementa o cadastro de times e os vínculos de membros e líderes com vigência e histórico. O Coordenador (`OrganizationAdmin`) cria e edita times, define membros e líderes e pode promover outros coordenadores. O Líder (`Manager`) consulta somente os times que lidera e as pessoas vinculadas a eles. O Membro (`Member`) consulta somente a própria associação e os próprios registros. O escopo é recalculado no banco a cada requisição, sem depender da expiração do JWT.
-
-A importação administrativa do Monday e do Ponto VR Mais persiste identidades e apontamentos com retenção móvel de 90 dias. Calendário, regras de tolerância, conciliação, tratamento de divergências, alertas e relatórios formatados continuam nas próximas etapas. A [especificação funcional](docs/conciliacao-horas/especificacao-funcional.md) é a fonte de verdade do produto para trabalho com outros agentes.
-
-Para implementar as telas no `CEP-FRONT`, use o [guia de telas e contratos do front](docs/guia-telas-frontend-cep-horas.md), que separa as funcionalidades disponíveis das que ainda dependem de endpoints de conciliação.
-
-O `SystemAdmin` continua sendo um perfil técnico. Para suporte pelo front administrativo, ele pode selecionar explicitamente uma organização usando `organizationId`; usuários da organização não podem trocar esse escopo.
-
-### Cadastro administrativo das identidades externas
-
-O backend já possui o fluxo administrativo que antecede a conciliação:
-
-- `POST /api/v1/organization/time-control/synchronizations` atualiza sete dias conforme o escopo do solicitante: membro, próprios dados; líder, próprios dados e time; coordenador, organização. A carga inicial e `full=true` administrativos cobrem 90 dias. O VR Mais recebe IDs e datas; o Monday filtra atividades por responsável na origem e as sessões por data após a leitura.
-- `GET /api/v1/organization/time-control/external-identities` permite pesquisar e filtrar identidades ativas, associadas ou pendentes.
-- `POST /api/v1/organization/time-control/people/invitations` associa uma identidade Monday a uma identidade VR Mais e envia o convite do usuário.
-- `GET /api/v1/organization/time-control/people` lista as associações e o estado do convite/usuário.
-- `GET /api/v1/organization/time-control/history` consulta os registros persistidos de pessoas autorizadas em períodos de até 90 dias.
-
-O aceite do convite liga a conta criada à associação já aprovada pelo administrador. IDs externos não podem ser usados por duas pessoas, as sincronizações são isoladas por organização e falhas das fontes são apresentadas separadamente. Consulte [o contrato administrativo](docs/workforce-admin-integration.md) para os filtros, respostas e estados.
-
-## Início rápido com containers
-
-Este Compose é para desenvolvimento. Para a VM, use exclusivamente [compose.production.yaml](compose.production.yaml) e siga [o guia de produção](deploy/README.md).
-
-Pré-requisito: Docker Desktop, Docker Engine ou alternativa compatível com Compose.
+Use `compose.yaml` somente em desenvolvimento; produção possui [guia próprio](deploy/README.md).
 
 ```bash
 docker compose up --build -d
 ```
 
-A API estará em `http://localhost:8080`, o Swagger em `http://localhost:8080/swagger` e o Mailpit em `http://localhost:8025`. O Compose executa a migration antes de iniciar a API.
+API em `http://localhost:8080`, Swagger em `/swagger` e Mailpit em `http://localhost:8025`. Compose aplica migration antes da API. Configure as credenciais de bootstrap em ambiente seguro e execute uma única vez `docker compose run --rm api bootstrap-admin`. Não incluir valores no histórico de comandos ou no Git. Bootstrap só cria o primeiro SystemAdmin e exige domínio permitido.
 
-Crie o primeiro administrador global uma única vez:
+## Desenvolvimento sem containers
 
-```bash
-docker compose run --rm \
-  -e BootstrapAdmin__Email=admin@example.com \
-  -e BootstrapAdmin__Password="uma senha longa e exclusiva" \
-  -e BootstrapAdmin__DisplayName="Administrador" \
-  api bootstrap-admin
-```
-
-## Execução sem containers
-
-Requer .NET SDK 10 e uma instância PostgreSQL compatível.
+Requer .NET SDK 10 e PostgreSQL configurado. Forneça a conexão e demais segredos por mecanismo externo; use configuração de desenvolvimento e serviços descartáveis para testes.
 
 ```bash
 dotnet tool restore
 dotnet restore CEP-API.sln
 dotnet run --project src/CepApi.Api -- migrate
-```
-
-Configure `BootstrapAdmin__Email`, `BootstrapAdmin__Password` e opcionalmente `BootstrapAdmin__DisplayName` no ambiente, então execute:
-
-```bash
 dotnet run --project src/CepApi.Api -- bootstrap-admin
 dotnet run --project src/CepApi.Api
 ```
 
-Em `Development`, códigos de convite e recuperação são registrados somente no log local. Nos demais ambientes, o envio usa SMTP.
+Bootstrap requer `BootstrapAdmin__Email`, `BootstrapAdmin__Password` e opcionalmente `BootstrapAdmin__DisplayName`, fornecidos de forma segura. Nos ambientes não Development, entrega de convites/recuperação usa SMTP. Development pode registrar códigos em log local: proteja esse ambiente e não copie seus logs para documentação.
 
-Os e-mails são enfileirados junto com a operação no banco e entregues em segundo plano. Uma falha temporária do SMTP não desfaz o cadastro; a fila tenta novamente até a expiração do código.
+## Configuração
 
-## Configuração de produção
+ASP.NET usa `__` para chaves hierárquicas do ambiente; arquivos de secrets também podem fornecer essas chaves. Valores reais permanecem fora do repositório.
 
-As chaves usam a sintaxe hierárquica do ASP.NET Core (`__` em variáveis de ambiente):
+| Grupo | Responsabilidade |
+|---|---|
+| `ConnectionStrings__Postgres` | Conexão de execução; produção separa proprietário/migration de runtime |
+| `Jwt__PrivateKeyPem`, `Jwt__KeyId`, `Jwt__PreviousPublicKeys` | Assinatura RS256 e rotação, mantendo públicas anteriores pela janela necessária |
+| `DataProtection__KeysPath` | Chaves persistentes dos cookies e payloads da outbox |
+| `Email__*` | SMTP com TLS em produção e link seguro de ativação |
+| `WorkforceIntegrations__Monday__*` e `WorkforceIntegrations__VrMais__*` | Habilitação, origem, IDs/configuração e credenciais exclusivamente no servidor |
+| `ReverseProxy__KnownProxies` | Proxies confiáveis para IP/esquema; não confiar em qualquer origem |
+| `TimeNotifications__WorkerEnabled` | Processador; desabilitar mantém pedidos pendentes |
 
-- `ConnectionStrings__Postgres`: conexão PostgreSQL.
-- `Jwt__PrivateKeyPem`: chave RSA privada PEM; obrigatória em produção. Quebras de linha podem ser fornecidas como `\n`.
-- `Jwt__KeyId`: identificador público da chave ativa.
-- `Jwt__PreviousPublicKeys__0__KeyId` e `Jwt__PreviousPublicKeys__0__PublicKeyPem`: chaves anteriores aceitas durante rotação.
-- `Email__Host`, `Email__Port`, `Email__UseSsl`, `Email__Username`, `Email__Password`, `Email__FromAddress` e `Email__FromName`: SMTP.
-- `Email__UseSsl=true` usa TLS direto (geralmente 465); `false` exige STARTTLS (geralmente 587). Transporte sem TLS só é permitido fora de produção, explicitamente com `Email__AllowInsecureTransport=true`.
-- `DataProtection__KeysPath`: diretório persistente das chaves que protegem o conteúdo da fila de e-mails e os cookies de sessão web; obrigatório em produção.
-- `WorkforceIntegrations__Monday__Enabled`, `WorkforceIntegrations__Monday__Token`, `WorkforceIntegrations__Monday__BoardId` e `WorkforceIntegrations__Monday__ApiVersion`: leitura dos usuários ativos inscritos no board configurado.
-- `WorkforceIntegrations__VrMais__Enabled` e `WorkforceIntegrations__VrMais__Token`: leitura do cadastro de colaboradores no Ponto VR Mais.
-- `ReverseProxy__KnownProxies__0`: IP do proxy confiável. Nunca confie em cabeçalhos de IP de qualquer origem.
+As integrações externas e o envio automático de avisos nascem desabilitados. Habilitar exige configuração e homologação; salvar agenda não prova disparo. SMTP enfileirado não prova entrega.
 
-Arquivos montados em `/run/secrets` também são lidos como configuração hierárquica, por exemplo `Jwt__PrivateKeyPem`. No Compose de produção, as credenciais do banco para execução e migração são diferentes.
-Tokens das integrações devem ser fornecidos pelo mesmo mecanismo de segredos, nunca gravados em `appsettings.json` ou no repositório.
+## Contrato e pontos de código
 
-Gere uma chave RSA fora do repositório e injete-a pelo gerenciador de segredos da plataforma:
+[OpenAPI atual](docs/openapi-current.json) possui 52 caminhos e 72 schemas na base revisada em 04/10/2026. Regenerar em alterações de contrato; a quantidade é evidência da revisão, não requisito fixo de produto. Controllers estão em `src/CepApi.Api/Controllers`; [contexto atual](docs/CONTEXTO-ATUAL.md) aponta serviços e motor por fluxo. Exemplos HTTP: `requests/cep-api.http`.
 
-```bash
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out jwt-private.pem
-openssl rsa -in jwt-private.pem -pubout -out jwt-public.pem
-```
-
-Para rotacionar, configure a nova chave como ativa e mantenha a chave pública anterior na coleção `PreviousPublicKeys` por pelo menos 72 horas. Nunca versione arquivos `.pem`, `.key`, senhas ou tokens.
-
-Migrations não são aplicadas automaticamente em produção:
-
-```bash
-dotnet run --project src/CepApi.Api -- migrate
-```
-
-## Desenvolvimento e testes
-
-As decisões compartilhadas ficam nestes pontos:
-
-- `src/CepApi.Api/Authorization/OrganizationScopeService.cs`: seleção e validação da organização, executadas pelo filtro `OrganizationScope` antes dos controllers.
-- `src/CepApi.Api/Services`: autenticação, sessões e ciclo de convites. A criação do convite, o e-mail na outbox e a auditoria participam da mesma transação; a reserva do e-mail serializa criações concorrentes.
-- `src/CepApi.Api/ApiProblems.cs`: formato dos erros, códigos e identificador de correlação.
-- `src/CepApi.Domain`: validade e limite de tentativas dos códigos em `SecurityCodePolicy.cs`; regras e calendário das análises em `TimeAnalysis.cs`.
-- `src/CepApi.Infrastructure/Persistence`: mapeamentos separados por contexto, locks de segurança, revogação de sessões e paginação. Alterações em mapeamentos continuam exigindo a verificação de migrations.
-- `src/CepApi.Infrastructure/Services/ExternalSourceHttp.cs`: tratamento comum das falhas HTTP de Monday e VR Mais, preservando o cancelamento solicitado pelo chamador.
-
-Os controllers coordenam a entrada HTTP; as regras compartilhadas devem ser alteradas nesses pontos para evitar decisões divergentes entre endpoints.
-
-Na importação, `WorkforceSnapshotNormalizer` valida e normaliza cópias dos snapshots imutáveis recebidos. `WorkforceSnapshotWriter` usa o mesmo mapeamento para criar ou atualizar cada entidade. O período de sincronização fica em `WorkforceHistoryPolicy`. A integração Monday separa a consulta e a paginação da interpretação das sessões, feita por `MondayTimeSnapshotReader` com um contexto por consulta. O agendador calcula os horários devidos uma vez por ciclo e usa as mesmas regras para todas as organizações.
+## Validação
 
 ```bash
 dotnet build CEP-API.sln -m:1
@@ -139,18 +68,20 @@ dotnet test tests/CepApi.UnitTests
 dotnet test tests/CepApi.IntegrationTests
 ```
 
-Os testes de integração e segurança exigem Docker e usam PostgreSQL real. Incluem recuperação, revogação, concorrência de convites e administradores, isolamento entre organizações, paginação extrema, versões de agendamentos, perda de acesso antes de um disparo, rollback da outbox, entrega concorrente de e-mails, retentativa de SMTP e proxy. Os testes unitários também cobrem rotação de chaves JWT, códigos de segurança, cancelamento e falhas das fontes externas, paginação Monday e divisão de períodos VR Mais com concorrência limitada. A coleção de exemplos está em `requests/cep-api.http` e o contrato do cliente em `docs/plugin-integration.md`.
-
-Para validar a imagem, as migrations e o fluxo HTTPS com dados descartáveis (PowerShell 7):
+Integração usa PostgreSQL real via Testcontainers e exige Docker. Para validar imagem, migrations e HTTPS com dados descartáveis em PowerShell 7:
 
 ```powershell
 docker build -t cep-api:security-review .
 ./deploy/Test-ProductionStack.ps1
 ```
 
-Endpoints de operação:
+Esses comandos são procedimentos; este texto não registra sua execução. Mudanças funcionais devem verificar os casos afetados de segurança, isolamento, concorrência, fontes, períodos e idempotência. Testes locais/CI não substituem fontes reais, SMTP, VM ou homologação Windows.
 
-- `GET /health/live`: processo em execução.
-- `GET /health/ready`: acesso ao PostgreSQL confirmado.
-- `GET /.well-known/jwks.json`: chaves públicas de assinatura.
-- `GET /swagger`: documentação interativa somente fora de produção.
+## Operação
+
+- `/health/live`: processo; `/health/ready`: acesso PostgreSQL. Saúde não comprova SHA implantado ou execução dos jobs.
+- `/.well-known/jwks.json`: chaves públicas.
+- `/swagger`: somente fora de produção.
+- [Deploy](deploy/README.md), [atualização noturna](deploy/nightly/README.md) e [monitor local](deploy/monitoring/README.md) descrevem scripts versionados. A configuração instalada deve ser verificada na VM.
+
+Migrations em produção são explícitas, com backup validado antes da mudança. Rollback da imagem não reverte schema. Leia a [base de segurança](docs/security-hardening.md) antes de configurar o ambiente.

@@ -10,4 +10,4 @@ As consultas e gravações preservam os filtros por organização. A auditoria d
 
 O frontend apresenta uma lista paginada de organizações para o administrador global. Ao escolher uma, abre as telas existentes e inclui o contexto nas chamadas. Ao trocar de organização, desmonta as telas anteriores para descartar seleção de pessoa e dados locais. A seleção não é persistida na sessão compartilhada entre abas.
 
-Não há migration. Publicar o backend antes do frontend: versões anteriores da API não reconhecem o acesso global às rotas de organização.
+O frontend deve consumir backend com este contrato disponível. Versão efetivamente implantada precisa ser confirmada separadamente; acesso global nunca dispensa contexto e isolamento organizacional.

@@ -1,6 +1,6 @@
 # Atualização diária às 02h
 
-A VM verifica a `main` diariamente às **02:00 no horário de São Paulo**. O timer não recupera uma execução perdida durante o dia.
+O timer versionado está configurado para verificar a `main` diariamente às **02:00 no horário de São Paulo**. Conferir instalação, habilitação e versão do script na VM antes de afirmar execução atual. O timer não recupera uma execução perdida durante o dia.
 
 O fluxo é direto:
 
@@ -33,3 +33,9 @@ Para suspender:
 ```bash
 sudo systemctl disable --now cep-api-update.timer
 ```
+
+## Limite do backup e manutenção
+
+O backup do atualizador é realizado quando existe nova versão candidata; não é uma rotina independente de backup diário. A validação de catálogo com `pg_restore --list` não equivale a restauração completa. Retenção, cópia externa e restauração devem ser verificadas separadamente, incluindo chaves de Data Protection/assinatura.
+
+Mudança de schema incompatível exige suspender o timer antes da janela, revisar rollback e só reabilitar após validação operacional. Não deduzir suspensão ou habilitação atual pela documentação. CI aprovada e readiness não comprovam fontes, SMTP ou processamento dos avisos.

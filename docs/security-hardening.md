@@ -1,33 +1,41 @@
-# Correções da auditoria — 11/09/2026
+# Base de segurança — CEP-API
 
-Base auditada: `e614a15caf93e86a601f6e5efd40eb93fa23f763`.
+Revisão de contexto: 04/10/2026, código base `b36c6e149b42253b44860d98c6ffe44f98c53dd6`. Este documento descreve controles versionados e verificações necessárias; não reapresenta relatórios de testes antigos como validação atual.
 
-## Alterações
+## Sessões e códigos
 
-- Recuperação invalida códigos antigos na emissão e todos os pendentes após sucesso; consumo e tentativas são serializados por conta no PostgreSQL, na mesma transação da senha e revogação.
-- Access tokens incluem identificação da família da sessão e versão de segurança. Logout/revogação bloqueiam a família; recuperação/troca de senha bloqueiam todas as sessões. Rotacionar normalmente não invalida um access token ainda vigente.
-- Refresh simultâneo possui somente um vencedor. Reutilização posterior revoga a família. Clientes precisam serializar refresh e tratar resposta perdida com novo login.
-- A sessão web mantém o refresh token somente em cookie protegido por Data Protection, `HttpOnly`, `Secure`, `SameSite=Strict` e prefixo `__Host-`; login, rotação e logout exigem marcador de requisição de mesma origem.
-- Alterações de permissões e do último administrador são protegidas por transação/bloqueio. Consumo de convites também bloqueia os registros durante a verificação.
-- A fila de e-mail guarda conteúdo protegido com Data Protection na mesma gravação do convite, faz retentativas e remove mensagens entregues/expiradas. SMTP exige TLS em produção.
-- Cabeçalhos de IP/HTTPS só são aceitos de proxy confiável. O limite anônimo é separado por IP e rota normalizada, com padrão configurável de 60/minuto; operações sensíveis autenticadas têm limite por conta.
-- Compose de produção separado, PostgreSQL sem porta publicada, usuário limitado para API, proprietário distinto para migrations, chave JWT persistente, volume de proteção, filesystem da API somente leitura, limites de memória e rotação de logs.
-- Dependência Testcontainers atualizada para 4.15.0. Docker restaura somente a aplicação e inclui bibliotecas de runtime Alpine. SDK pode avançar dentro de .NET 10 para acompanhar imagem e CI.
-- Teste existente corrigido quanto a enums JSON e precisão de datas JWT; verificação criptográfica de assinatura, adulteração e audiência adicionada.
+- Bearer exige JWT válido, conta/org ativas, papel/organização consistentes com banco, security stamp e família ativa. Rotação normal não invalida access vigente; logout/revogação bloqueiam família e troca/recuperação de senha bloqueia sessões.
+- Refresh é serializado no banco e no cliente; reutilização revoga família. Resposta perdida não permite replay automático do token anterior.
+- Recuperação conserva apenas código mais recente; consumo/tentativas são serializados, e sucesso muda senha e revoga sessões/códigos na transação.
+- Convite tem validade e limite de tentativas; ativação/reenvio são transacionais e auditados, com proteção dos códigos e associação no mesmo contexto organizacional.
+- Sessão web usa cookie protegido, HttpOnly/Secure/SameSiteStrict, prefixo Host e prazo absoluto. Rotas exigem marcador/Origin de mesma origem e não podem ser cacheadas. Data Protection precisa persistir.
 
-## Validação executada
+## Dados e administração
 
-- `dotnet test CEP-API.sln -c Release`: **8 unitários + 14 de integração aprovados**, nenhum ignorado.
-- Concorrência de refresh/reset testada com duas requisições aguardando efetivamente o bloqueio da conta em PostgreSQL real.
-- Testados códigos antigos, revogação, sessão rotacionada, isolamento de duas organizações, falha/retentativa de SMTP e cabeçalhos forjados de proxy.
-- `dotnet list CEP-API.sln package --vulnerable --include-transitive`: nenhum pacote vulnerável reportado pelas fontes consultadas nesta data.
-- Script idempotente de migrations gerado; modelo sem alterações pendentes de migration.
-- Imagem Docker Linux construída com sucesso.
-- `deploy/Test-ProductionStack.ps1`: aprovado com PostgreSQL, API e Nginx reais em localhost HTTPS; migrations, bootstrap, login, reinício mantendo chave/acesso, Swagger desativado e revogação após logout.
-- O teste usa dados/segredos descartáveis e remove seus próprios contêineres e volumes. Os resultados locais estão em `artifacts/production-smoke.log` e `artifacts/docker-build.log` (não versionados).
+Organização é validada antes dos controllers organizacionais. SystemAdmin seleciona contexto explicitamente; acesso global não transfere dados ou ignora validações. Vínculos vigentes hoje delimitam acesso membro/líder. Consulta histórica não elimina autorização atual.
 
-## Antes de disponibilizar para usuários
+Alterações administrativas sensíveis, último administrador, convites, refresh, recuperação e PIN usam transações/bloqueios conforme serviço responsável. PIN tem hash salgado, limite por usuário/organização/global persistido e auditoria sem segredo. Não depende das senhas das contas.
 
-Aplicar a migration `SecurityEmailOutbox`; fornecer os segredos e o certificado indicados em [deploy/README.md](../deploy/README.md); verificar SMTP real, ARM64 e comunicação com os plugins na VM; configurar backup externo e testar restauração. A VM e o DNS não foram alterados durante estas correções.
+Email é enfileirado na transação, com payload protegido e retentativas. SMTP exige TLS em produção. Mensagem aceita pelo SMTP antes de crash pode ser reenviada com mesmo código; outbox não garante email exatamente uma vez. HTTP de sucesso não prova entrega.
 
-Tokens de acesso emitidos pela versão anterior exigem novo login. Grants já emitidos para operação offline continuam válidos até a expiração deliberada, no máximo 72 horas. Os testes não constituem uma garantia de ausência de vulnerabilidades nem um teste de carga.
+## Fontes, notificações e energia
+
+Credenciais Monday/VR ficam exclusivamente no servidor. Não registrar tokens, dados pessoais, PIN, códigos, senhas ou conexões reais em docs/logs. Nome não é chave de associação e atividade com responsável ambíguo não é distribuída por suposição.
+
+Worker usa exclusão mútua e pedidos idempotentes com revalidação de autorização/agenda/configuração. Relatório/notificação individual são persistidos atomicamente; receber/ler são estados distintos. Configuração global não concede acesso global aos destinatários.
+
+Energia inconclusiva não é liberação. Erro HTTP é servidor acessível, não prova transporte offline. API não executa ação no sistema operacional. Token/PIN não chega ao serviço Windows.
+
+## Rede, deploy e persistência
+
+Somente proxies configurados podem definir esquema/IP encaminhado. Rate limiting distingue rotas anônimas por IP/rota e sensíveis por conta. Não habilitar CORS com credenciais para sessão web.
+
+Produção usa Compose separado, PostgreSQL sem porta pública, credenciais owner/runtime distintas, API sem root/read-only, chaves JWT persistentes, volume de Data Protection, limites de recursos e rotação de logs. Secrets montados precisam de permissões mínimas verificadas por UID, sem imprimir conteúdo.
+
+Migrations são explícitas e versionadas. Backup deve ser validado antes da troca e rollback exige schema compatível; voltar imagem não desfaz migration. Backup externo e restauração precisam ser comprovados, inclusive chaves de proteção/assinatura. Monitor local não equivale a alerta externo ou auto recuperação.
+
+## Validação de mudança
+
+Conforme impacto, verificar unidades, integração com PostgreSQL real, isolamento, autorização revogada, concorrência, replay, rollback transacional da outbox, retentativas, proxy e HTTPS, migrations com papel runtime limitado e modelo sem migration pendente. Consulte comandos no [README](../README.md) e stack descartável no [deploy](../deploy/README.md).
+
+Relate base, comandos executados, resultados e limitações na entrega. Resultado antigo, ausência de falhas locais ou health público não garante ausência de vulnerabilidades, desempenho, fontes reais, SMTP, estado da VM ou consumo pelos plugins. A janela offline dos grants permite validade até 72h sem revogação imediata; não atribuir proteção por hardware que o grant não contém.

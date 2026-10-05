@@ -20,4 +20,4 @@ A regra vale para o administrador inicial de uma organização, convites de usu�
 
 Desativar um domínio bloqueia novos cadastros e convites; contas já existentes continuam podendo autenticar e recuperar sua senha. Para retirar acesso de uma conta existente, desative o usuário ou sua organização. O convite com código continua obrigatório: pertencer a um domínio permitido não cria acesso automaticamente.
 
-O envio de convites e recuperação depende de SMTP configurado. A primeira implantação na Oracle mantém o dispatcher de e-mail desativado enquanto o provedor não estiver definido.
+O envio de convites e recuperação depende de SMTP configurado. Habilitação do dispatcher e provedor instalado devem ser verificados no ambiente; esta documentação não comprova seu estado atual na VM.
