@@ -67,6 +67,7 @@ public static class DependencyInjection
         services.AddScoped<EmailOutboxDispatcher>();
         services.AddScoped<TimeNotificationProcessor>();
         services.AddScoped<FreshTimeAnalysisService>();
+        services.AddScoped<PersonalOverviewService>();
         if (configuration.GetValue("TimeNotifications:WorkerEnabled", true))
             services.AddHostedService<TimeNotificationWorker>();
         if (configuration.GetValue("EmailOutbox:Enabled", true))

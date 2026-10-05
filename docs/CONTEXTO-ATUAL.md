@@ -34,11 +34,12 @@ Sincronização normal lê hoje mais seis dias, somente identidades ativas assoc
 
 Monday atribui sessão ao profissional único do item/subitem. R.T. e iniciador do timer não definem o titular. Subitem sem profissional próprio herda do pai; ambiguidade impede atribuição presumida. A origem filtra responsáveis e a aplicação recorta sessões por datas após leitura. VR recebe IDs e período, com consultas limitadas. [Contrato de importação](workforce-admin-integration.md).
 
-## Três formas de consultar horas
+## Formas de consultar horas
 
 1. **Histórico importado:** consulta somente banco; retorna registros e `days`. Fonte filtrada limita detalhes/dias, mas resumo diário usa ambas as identidades. Não estende timer até agora; VR de hoje é nulo. Falta de linhas não prova fonte completa. [Resumo diário](workforce-daily-history.md).
 2. **Relatório persistido:** GET analyses lista snapshots gerados pelo processamento, com corte/versão usados. Não chama fontes nem atualiza resultados anteriores.
 3. **Análise atual:** serviço lê ambas as fontes para o mesmo corte e passa dados ao motor. Processamento de avisos e energia usam essa leitura; resultado incompleto não confirma coerência.
+4. **Acompanhamento pessoal:** GET próprio com períodos oficiais, classificação do servidor e dias de atenção. Reutiliza a leitura/motor atuais sem gerar relatórios, importar histórico ou autorizar energia. [Contrato aditivo](personal-overview.md), implementado em branch de entrega de 05/10/2026; publicação operacional exige evidência própria.
 
 O motor usa segundos, dia de São Paulo e diferença Monday − VR. Tolerância inicial global é 30min, estritamente acima gera ocorrência. Deduplica mesma chave externa, mas soma sessões distintas simultâneas sem reunir intervalos. Em dia VR fechado usa total oficial com ajustes e valida batidas; no atual soma intervalos válidos até o corte. Timer atravessando fechamento e batidas inválidas impedem conclusão.
 

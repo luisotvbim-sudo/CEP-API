@@ -21,6 +21,7 @@ Entrada para retomada em qualquer computador, revisada em 04/10/2026. A base de 
 | Convites | [Ativação](invitation-activation.md) e [reenvio](people-invitation-resend.md) |
 | Fontes/pessoas | [Importação e associação Monday/VR](workforce-admin-integration.md) |
 | Histórico | [Resumo diário importado](workforce-daily-history.md) |
+| Acompanhamento pessoal | [Consulta atual, situação, períodos e qualidade](personal-overview.md) |
 | Análises/avisos | [Regras aprovadas](conciliacao-horas/contrato-analises-notificacoes.md) e [rotas/processamento](time-notifications.md) |
 | Energia | [Decisão ao vivo](power-action-check.md) e [PIN temporário](power-admin-unlock.md) |
 | Deploy | [Produção](../deploy/README.md), [nightly](../deploy/nightly/README.md) e [monitor](../deploy/monitoring/README.md) |

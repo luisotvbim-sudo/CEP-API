@@ -6,6 +6,8 @@ Comece por [AGENTS.md](AGENTS.md), [contexto atual](docs/CONTEXTO-ATUAL.md) e [�
 
 ## Funcionamento atual
 
+A consulta de [acompanhamento pessoal](docs/personal-overview.md) retorna períodos oficiais, situação e dias de atenção, sem gerar relatórios ou autorizar energia.
+
 - Isolamento por organização, papéis SystemAdmin/OrganizationAdmin/User e acesso de membro/líder recalculado pelos vínculos vigentes hoje.
 - Login nativo com JWT RS256 e refresh rotativo; [sessão web](docs/browser-sessions.md) de até sete dias com cookie protegido de mesma origem. Revogação da família e versão de segurança são verificadas no bearer.
 - Convites sem cadastro público, [ativação sem sessão](docs/invitation-activation.md), [reenvio administrativo](docs/people-invitation-resend.md), recuperação e outbox SMTP transacional.
