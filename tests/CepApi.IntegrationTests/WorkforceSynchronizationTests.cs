@@ -4,6 +4,7 @@ using CepApi.Infrastructure.Persistence;
 using CepApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace CepApi.IntegrationTests;
 
@@ -139,6 +140,121 @@ public sealed class WorkforceSynchronizationTests(SecurityFixture fixture) : ICl
     private static WorkforceDirectorySyncService Service(AppDbContext db, IClock clock, TestSource[] sources)
         => new(db, sources, sources, new WorkforceSnapshotWriter(db, clock), clock);
 
+    [Fact]
+    public async Task Normal_admin_retry_bootstraps_a_directory_missing_after_a_partial_first_run()
+    {
+        var owner = await fixture.CreateUserAsync(UserRole.OrganizationAdmin);
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var clock = new TestClock();
+        var sources = Sources();
+        sources[1].DirectoryFails = true;
+        var service = Service(db, clock, sources);
+        var partial = await service.SynchronizeAsync(owner.OrganizationId!.Value, owner.Id, false, null, Ct);
+        Assert.Equal(WorkforceSyncStatus.PartiallySucceeded, partial.Status);
+        Assert.Equal(1, await db.ExternalWorkforceIdentities.CountAsync(x => x.OrganizationId == owner.OrganizationId, Ct));
+        sources[1].DirectoryFails = false;
+        var retried = await service.SynchronizeAsync(owner.OrganizationId.Value, owner.Id, false, null, Ct);
+        Assert.Equal(WorkforceSyncStatus.Succeeded, retried.Status);
+        Assert.Equal(2, await db.ExternalWorkforceIdentities.CountAsync(x => x.OrganizationId == owner.OrganizationId, Ct));
+        Assert.All(retried.Sources, run => Assert.Equal(1, run.ReceivedCount));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_source_deadline_finishes_the_batch_without_discarding_the_other_source(bool directoryWaits)
+    {
+        var owner = await fixture.CreateUserAsync(UserRole.OrganizationAdmin);
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var clock = new TestClock();
+        var sources = Sources();
+        await Service(db, clock, sources).SynchronizeAsync(owner.OrganizationId!.Value, owner.Id, true, null, Ct);
+        if (directoryWaits) sources[0].WaitForDirectory = token => Task.Delay(Timeout.InfiniteTimeSpan, token);
+        else sources[0].WaitForTime = token => Task.Delay(Timeout.InfiniteTimeSpan, token);
+        var service = new WorkforceDirectorySyncService(db, sources, sources, new WorkforceSnapshotWriter(db, clock), clock,
+            Options.Create(new WorkforceIntegrationOptions { SynchronizationSourceTimeoutSeconds = 1 }));
+        var result = await service.SynchronizeAsync(owner.OrganizationId.Value, owner.Id, true, null, Ct)
+            .WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Equal(WorkforceSyncStatus.PartiallySucceeded, result.Status);
+        Assert.Equal("source_sync_timeout", Assert.Single(result.Sources,
+            source => source.Source == ExternalWorkforceSource.Monday).ErrorCode);
+        Assert.Equal(WorkforceSyncStatus.Succeeded, Assert.Single(result.Sources,
+            source => source.Source == ExternalWorkforceSource.VrMais).Status);
+        Assert.Equal(2, await db.WorkforceTimeRecords.CountAsync(x => x.OrganizationId == owner.OrganizationId, Ct));
+    }
+
+    [Fact]
+    public async Task Vr_directory_and_records_are_persisted_while_monday_is_waiting()
+    {
+        var owner = await fixture.CreateUserAsync(UserRole.OrganizationAdmin);
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var sources = Sources();
+        var mondayStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseMonday = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sources[0].WaitForTime = async token =>
+        {
+            mondayStarted.TrySetResult();
+            await releaseMonday.Task.WaitAsync(token);
+        };
+        var synchronization = Service(db, new TestClock(), sources)
+            .SynchronizeAsync(owner.OrganizationId!.Value, owner.Id, true, null, Ct);
+        try
+        {
+            await mondayStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+            await using var check = fixture.Factory.Services.CreateAsyncScope();
+            var checkDb = check.ServiceProvider.GetRequiredService<AppDbContext>();
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+            deadline.CancelAfter(TimeSpan.FromSeconds(3));
+            while (!await checkDb.WorkforceSyncSourceRuns.AsNoTracking().AnyAsync(x =>
+                x.OrganizationId == owner.OrganizationId && x.Source == ExternalWorkforceSource.VrMais &&
+                x.Status == WorkforceSyncStatus.Succeeded, deadline.Token))
+                await Task.Delay(20, deadline.Token);
+            Assert.Equal(1, await checkDb.WorkforceTimeRecords.CountAsync(x =>
+                x.OrganizationId == owner.OrganizationId && x.Source == ExternalWorkforceSource.VrMais, Ct));
+        }
+        finally
+        {
+            releaseMonday.TrySetResult();
+            await synchronization;
+        }
+    }
+
+    [Fact]
+    public async Task Cancelled_request_finalizes_running_sources_and_allows_an_immediate_retry()
+    {
+        var owner = await fixture.CreateUserAsync(UserRole.OrganizationAdmin);
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var sources = Sources();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sources[0].WaitForTime = async token =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        };
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var synchronization = Service(db, new TestClock(), sources)
+            .SynchronizeAsync(owner.OrganizationId!.Value, owner.Id, true, null, cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => synchronization);
+        await using var check = fixture.Factory.Services.CreateAsyncScope();
+        var checkDb = check.ServiceProvider.GetRequiredService<AppDbContext>();
+        var batch = await checkDb.WorkforceSyncBatches.AsNoTracking().Include(x => x.Sources)
+            .SingleAsync(x => x.OrganizationId == owner.OrganizationId, Ct);
+        Assert.NotEqual(WorkforceSyncStatus.Running, batch.Status);
+        Assert.NotNull(batch.CompletedAt);
+        Assert.All(batch.Sources, source => Assert.NotEqual(WorkforceSyncStatus.Running, source.Status));
+        Assert.Equal("sync_cancelled", Assert.Single(batch.Sources, x => x.Source == ExternalWorkforceSource.Monday).ErrorCode);
+        sources[0].WaitForTime = null;
+        var retry = await Service(db, new TestClock(), sources)
+            .SynchronizeAsync(owner.OrganizationId.Value, owner.Id, true, null, Ct);
+        Assert.Equal(WorkforceSyncStatus.Succeeded, retry.Status);
+    }
+
     private static TestSource[] Sources() => [new(ExternalWorkforceSource.Monday), new(ExternalWorkforceSource.VrMais)];
 
     private sealed class TestClock : IClock
@@ -156,16 +272,24 @@ public sealed class WorkforceSynchronizationTests(SecurityFixture fixture) : ICl
         public bool TimeFails { get; set; }
         public bool EmitRecords { get; set; } = true;
         public string Title { get; set; } = "Original activity";
+        public Func<CancellationToken, Task>? WaitForTime { get; set; }
+        public Func<CancellationToken, Task>? WaitForDirectory { get; set; }
 
-        public Task<ExternalWorkforceDirectorySnapshot> FetchAsync(CancellationToken cancellationToken)
-            => DirectoryFails ? throw new ExternalDirectoryException("test_directory_failure", "Directory failed")
-                : Task.FromResult(new ExternalWorkforceDirectorySnapshot(Identities, DirectoryComplete));
+        public async Task<ExternalWorkforceDirectorySnapshot> FetchAsync(CancellationToken cancellationToken)
+        {
+            if (WaitForDirectory is not null) await WaitForDirectory(cancellationToken);
+            if (DirectoryFails) throw new ExternalDirectoryException("test_directory_failure", "Directory failed");
+            return new ExternalWorkforceDirectorySnapshot(Identities, DirectoryComplete);
+        }
 
-        public Task<ExternalWorkforceTimeSnapshot> FetchAsync(DateOnly from, DateOnly to, IReadOnlyCollection<string> ids, CancellationToken cancellationToken)
-            => TimeFails ? throw new ExternalDirectoryException("test_time_failure", "Time source failed")
-                : Task.FromResult(new ExternalWorkforceTimeSnapshot(from, to, EmitRecords
+        public async Task<ExternalWorkforceTimeSnapshot> FetchAsync(DateOnly from, DateOnly to, IReadOnlyCollection<string> ids, CancellationToken cancellationToken)
+        {
+            if (WaitForTime is not null) await WaitForTime(cancellationToken);
+            if (TimeFails) throw new ExternalDirectoryException("test_time_failure", "Time source failed");
+            return new ExternalWorkforceTimeSnapshot(from, to, EmitRecords
                     ? ids.Select(id => new ExternalWorkforceTimeRecordSnapshot(id, $"record:{id}", to,
                         TimeAnalysisEngine.StartOfDay(to).AddHours(9), TimeAnalysisEngine.StartOfDay(to).AddHours(10),
-                        3600, "closed", Title, null, null)).ToArray() : [], TimeComplete));
+                        3600, "closed", Title, null, null)).ToArray() : [], TimeComplete);
+        }
     }
 }

@@ -34,6 +34,8 @@ Sincronização normal lê hoje mais seis dias, somente identidades ativas assoc
 
 Monday atribui sessão ao profissional único do item/subitem. R.T. e iniciador do timer não definem o titular. Subitem sem profissional próprio herda do pai; ambiguidade impede atribuição presumida. A origem filtra responsáveis e a aplicação recorta sessões por datas após leitura. VR recebe IDs e período, com consultas limitadas. [Contrato de importação](workforce-admin-integration.md).
 
+Correção de sincronização em 05/10/2026: fontes coletam independentemente, persistindo progresso sem aguardar a outra. Cada fonte possui prazo de coleta de até 120s para diretório e registros; cancelamento finaliza o estado por token independente. Bootstrap administrativo incompleto é retomado enquanto faltar um dos diretórios. Contrato, limites e códigos estão em [importação](workforce-admin-integration.md); produção depende da integração/implantação da correção.
+
 ## Formas de consultar horas
 
 1. **Histórico importado:** consulta somente banco; retorna registros e `days`. Fonte filtrada limita detalhes/dias, mas resumo diário usa ambas as identidades. Não estende timer até agora; VR de hoje é nulo. Falta de linhas não prova fonte completa. [Resumo diário](workforce-daily-history.md).
