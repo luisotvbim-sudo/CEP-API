@@ -2,6 +2,8 @@ using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace CepApi.Infrastructure.Services;
 
@@ -10,7 +12,9 @@ internal sealed class WorkforceDirectorySyncService(
     IEnumerable<IExternalWorkforceDirectorySource> directorySources,
     IEnumerable<IExternalWorkforceTimeSource> timeSources,
     WorkforceSnapshotWriter snapshotWriter,
-    IClock clock) : IWorkforceDirectorySyncService
+    IClock clock,
+    IOptions<WorkforceIntegrationOptions>? options = null,
+    ILogger<WorkforceDirectorySyncService>? logger = null) : IWorkforceDirectorySyncService
 {
     private readonly IReadOnlyDictionary<ExternalWorkforceSource, IExternalWorkforceDirectorySource> directorySourcesByType =
         directorySources.ToDictionary(x => x.Source);
@@ -25,8 +29,9 @@ internal sealed class WorkforceDirectorySyncService(
         CancellationToken cancellationToken)
     {
         var bootstrap = !fullRefresh && visibleUserIds is null &&
-            !await db.ExternalWorkforceIdentities.AsNoTracking()
-                .AnyAsync(x => x.OrganizationId == organizationId, cancellationToken);
+            await db.ExternalWorkforceIdentities.AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId).Select(x => x.Source).Distinct()
+                .CountAsync(cancellationToken) < Enum.GetValues<ExternalWorkforceSource>().Length;
         var refreshDirectory = fullRefresh || bootstrap;
         var targetIds = refreshDirectory
             ? null
@@ -38,28 +43,87 @@ internal sealed class WorkforceDirectorySyncService(
         await CompleteInterruptedBatchesAsync(organizationId, cancellationToken);
         var batch = await StartBatchAsync(organizationId, requestedByUserId, cancellationToken);
 
-        var fetchTasks = refreshDirectory
-            ? batch.Sources.ToDictionary(run => run.Source,
-                run => FetchDirectoryAsync(run.Source, cancellationToken))
-            : null;
-        if (fetchTasks is not null)
-            await Task.WhenAll(fetchTasks.Values);
-
-        foreach (var run in batch.Sources.OrderBy(x => x.Source))
+        var period = WorkforceHistoryPolicy.SyncPeriod(clock.UtcNow, refreshDirectory);
+        using var fetchCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var budgets = batch.Sources.ToDictionary(run => run.Source, _ =>
         {
-            await SynchronizeSourceAsync(
-                organizationId,
-                run,
-                fetchTasks is null ? null : await fetchTasks[run.Source],
-                targetIds is null ? null : targetIds[run.Source],
-                refreshDirectory,
-                cancellationToken);
+            var budget = CancellationTokenSource.CreateLinkedTokenSource(fetchCancellation.Token);
+            budget.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(
+                options?.Value.SynchronizationSourceTimeoutSeconds ?? 120, 1, 120)));
+            return budget;
+        });
+        var pending = new Dictionary<WorkforceSyncSourceRun, Task<SourceFetchOutcome>>();
+        var allFetches = new List<Task<SourceFetchOutcome>>();
+        var idsBySource = new Dictionary<ExternalWorkforceSource, string[]>();
+        try
+        {
+            foreach (var run in batch.Sources.OrderBy(x => x.Source))
+            {
+                if (!refreshDirectory)
+                {
+                    idsBySource[run.Source] = targetIds![run.Source];
+                    run.CompleteSnapshot = true;
+                }
+                StartFetch(run, refreshDirectory);
+            }
+            while (pending.Count > 0)
+            {
+                var completed = await Task.WhenAny(pending.Values);
+                var run = pending.First(item => item.Value == completed).Key;
+                pending.Remove(run);
+                var outcome = await completed;
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    if (outcome.Error is { } error) throw error;
+                    if (outcome.Directory is { } directory)
+                    {
+                        // Only the coordinator accesses this scoped DbContext; network fetches run independently.
+                        await snapshotWriter.ApplyDirectoryAsync(organizationId, run, directory, cancellationToken);
+                        await db.SaveChangesAsync(cancellationToken);
+                        idsBySource[run.Source] = directory.Identities.Where(x => x.IsActive)
+                            .Select(x => x.ExternalId.Trim()).Distinct(StringComparer.Ordinal).ToArray();
+                        StartFetch(run, directory: false);
+                        continue;
+                    }
+                    await snapshotWriter.ApplyTimeAsync(organizationId, run, outcome.Time!,
+                        idsBySource[run.Source], cancellationToken);
+                    run.Status = WorkforceSyncStatus.Succeeded;
+                }
+                catch (ExternalDirectoryException error)
+                {
+                    MarkFailed(run, error.Code, error.Message, run.ReceivedCount > 0);
+                    logger?.LogWarning("Workforce source {Source} failed with {Code}", run.Source, error.Code);
+                }
+                run.CompletedAt = clock.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            batch.Status = CalculateBatchStatus(batch.Sources);
+            batch.CompletedAt = clock.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+            return batch;
+        }
+        catch
+        {
+            await fetchCancellation.CancelAsync();
+            try { await Task.WhenAll(allFetches); }
+            catch (Exception) { /* Observe every fetch before disposing its budget. */ }
+            await FinalizeInterruptedBatchAsync(batch.Id, cancellationToken.IsCancellationRequested
+                ? "sync_cancelled" : "sync_interrupted");
+            throw;
+        }
+        finally
+        {
+            foreach (var budget in budgets.Values) budget.Dispose();
         }
 
-        batch.Status = CalculateBatchStatus(batch.Sources);
-        batch.CompletedAt = clock.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-        return batch;
+        void StartFetch(WorkforceSyncSourceRun run, bool directory)
+        {
+            var task = FetchSourceAsync(run.Source, directory, period.From, period.To,
+                directory ? [] : idsBySource[run.Source], budgets[run.Source].Token, fetchCancellation.Token);
+            pending.Add(run, task);
+            allFetches.Add(task);
+        }
     }
 
     private async Task CompleteInterruptedBatchesAsync(Guid organizationId, CancellationToken cancellationToken)
@@ -122,49 +186,65 @@ internal sealed class WorkforceDirectorySyncService(
         }
     }
 
-    private async Task SynchronizeSourceAsync(
-        Guid organizationId,
-        WorkforceSyncSourceRun run,
-        DirectoryFetchOutcome? directoryOutcome,
-        string[]? targetedExternalIds,
-        bool fullRefresh,
-        CancellationToken cancellationToken)
+    private async Task<SourceFetchOutcome> FetchSourceAsync(
+        ExternalWorkforceSource source,
+        bool directory,
+        DateOnly from,
+        DateOnly to,
+        string[] activeExternalIds,
+        CancellationToken sourceToken,
+        CancellationToken requestToken)
     {
         try
         {
-            if (directoryOutcome?.Error is { } directoryError) throw directoryError;
-            var activeExternalIds = targetedExternalIds;
-            if (directoryOutcome?.Snapshot is { } snapshot)
+            if (directory)
             {
-                await snapshotWriter.ApplyDirectoryAsync(organizationId, run, snapshot, cancellationToken);
-                await db.SaveChangesAsync(cancellationToken);
-                activeExternalIds = snapshot.Identities.Where(x => x.IsActive)
-                    .Select(x => x.ExternalId.Trim()).Distinct(StringComparer.Ordinal).ToArray();
+                if (!directorySourcesByType.TryGetValue(source, out var provider))
+                    throw new ExternalDirectoryException("source_not_registered", $"{source} integration is not registered.");
+                return new(await provider.FetchAsync(sourceToken), null, null);
             }
-            else
-            {
-                run.CompleteSnapshot = true;
-            }
-
-            if (!timeSourcesByType.TryGetValue(run.Source, out var timeSource))
-                throw new ExternalDirectoryException("time_source_not_registered", $"{run.Source} time integration is not registered.");
-            var period = WorkforceHistoryPolicy.SyncPeriod(clock.UtcNow, fullRefresh);
-            var timeSnapshot = await timeSource.FetchAsync(period.From, period.To, activeExternalIds!, cancellationToken);
-            await snapshotWriter.ApplyTimeAsync(organizationId, run, timeSnapshot, activeExternalIds!, cancellationToken);
-            run.Status = WorkforceSyncStatus.Succeeded;
+            if (!timeSourcesByType.TryGetValue(source, out var timeSource))
+                throw new ExternalDirectoryException("time_source_not_registered", $"{source} time integration is not registered.");
+            return new(null, await timeSource.FetchAsync(from, to, activeExternalIds, sourceToken), null);
+        }
+        catch (OperationCanceledException) when (!requestToken.IsCancellationRequested && sourceToken.IsCancellationRequested)
+        {
+            return new(null, null, new ExternalDirectoryException("source_sync_timeout",
+                $"{source} synchronization exceeded its time limit. Previously imported records were preserved."));
         }
         catch (ExternalDirectoryException exception)
         {
-            MarkFailed(run, exception.Code, exception.Message, partiallySucceeded: run.ReceivedCount > 0);
+            return new(null, null, exception);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            MarkFailed(run, "time_sync_failed", $"{run.Source} time synchronization failed.",
-                partiallySucceeded: run.ReceivedCount > 0);
+            return new(null, null, new ExternalDirectoryException(directory ? "source_sync_failed" : "time_sync_failed",
+                $"{source} synchronization failed.", exception));
         }
+    }
 
-        run.CompletedAt = clock.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
+    private async Task FinalizeInterruptedBatchAsync(Guid batchId, string code)
+    {
+        // Discard changes that were not committed. The aborted HTTP token must not prevent cleanup.
+        db.ChangeTracker.Clear();
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            var stored = await db.WorkforceSyncBatches.Include(x => x.Sources)
+                .SingleAsync(x => x.Id == batchId, cleanup.Token);
+            foreach (var run in stored.Sources.Where(x => x.Status == WorkforceSyncStatus.Running))
+            {
+                MarkFailed(run, code, "The synchronization was interrupted before completion.", run.ReceivedCount > 0);
+                run.CompletedAt = clock.UtcNow;
+            }
+            stored.Status = CalculateBatchStatus(stored.Sources);
+            stored.CompletedAt = clock.UtcNow;
+            await db.SaveChangesAsync(cleanup.Token);
+        }
+        catch (Exception)
+        {
+            logger?.LogError("Workforce synchronization cleanup failed; interrupted-run recovery remains necessary");
+        }
     }
 
     private async Task<Dictionary<ExternalWorkforceSource, string[]>> LoadTargetExternalIdsAsync(
@@ -192,29 +272,6 @@ internal sealed class WorkforceDirectorySyncService(
             source => source,
             source => activeIdentities.Where(x => x.Source == source).Select(x => x.ExternalId)
                 .Distinct(StringComparer.Ordinal).ToArray());
-    }
-
-    private async Task<DirectoryFetchOutcome> FetchDirectoryAsync(
-        ExternalWorkforceSource source,
-        CancellationToken cancellationToken)
-    {
-        if (!directorySourcesByType.TryGetValue(source, out var provider))
-            return DirectoryFetchOutcome.Failure(new ExternalDirectoryException(
-                "source_not_registered", $"{source} integration is not registered."));
-
-        try
-        {
-            return DirectoryFetchOutcome.Success(await provider.FetchAsync(cancellationToken));
-        }
-        catch (ExternalDirectoryException exception)
-        {
-            return DirectoryFetchOutcome.Failure(exception);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            return DirectoryFetchOutcome.Failure(new ExternalDirectoryException(
-                "source_sync_failed", $"{source} synchronization failed.", exception));
-        }
     }
 
     private Task<bool> HasRunningBatchAsync(Guid organizationId, CancellationToken cancellationToken)
@@ -249,14 +306,8 @@ internal sealed class WorkforceDirectorySyncService(
     private static string Truncate(string value, int maxLength)
         => value[..Math.Min(value.Length, maxLength)];
 
-    private sealed record DirectoryFetchOutcome(
-        ExternalWorkforceDirectorySnapshot? Snapshot,
-        ExternalDirectoryException? Error)
-    {
-        public static DirectoryFetchOutcome Success(ExternalWorkforceDirectorySnapshot snapshot)
-            => new(snapshot, null);
-
-        public static DirectoryFetchOutcome Failure(ExternalDirectoryException error)
-            => new(null, error);
-    }
+    private sealed record SourceFetchOutcome(
+        ExternalWorkforceDirectorySnapshot? Directory,
+        ExternalWorkforceTimeSnapshot? Time,
+        ExternalDirectoryException? Error);
 }

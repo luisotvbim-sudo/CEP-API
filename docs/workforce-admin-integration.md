@@ -19,6 +19,14 @@ Para usuários da organização, o escopo vem do token e um `organizationId` dif
 
 Executa a sincronização das duas fontes. Sem `full=true`, cobre hoje e os seis dias anteriores: Membro atualiza a própria associação; Líder, sua associação e as dos membros de seus times vigentes; Coordenador, todas as pessoas associadas da organização. Um usuário sem nenhuma identidade ativa associada no escopo recebe HTTP 409 (`sync_scope_empty`). Uma organização não pode iniciar outra sincronização enquanto uma execução estiver com estado `running` (HTTP 409, `sync_already_running`).
 
+Os conectores executam independentemente: o diretório e os registros de uma fonte são aplicados assim que ficam disponíveis, sem esperar a outra. A persistência é serializada no contexto da requisição; não há acesso concorrente ao mesmo `DbContext`. A tentativa usa um único período para ambas as fontes.
+
+`WorkforceIntegrations__SynchronizationSourceTimeoutSeconds` limita a coleta de diretório e registros de cada fonte em conjunto (padrão 120 segundos, limitado a 1–120). Esse prazo também cobre paginação e leitura do corpo HTTP, que o timeout individual de cabeçalhos não cobre. Ao esgotar o prazo, a fonte termina com `source_sync_timeout`; seu histórico anterior é preservado e a outra fonte continua. Um prazo não comprova ausência de dados nem reduz silenciosamente o intervalo solicitado.
+
+Cancelamento/desconexão encerra as fontes ainda em andamento com `sync_cancelled`, usando uma janela independente de até 15 segundos para persistir o estado e liberar nova tentativa. Resultados já gravados permanecem. Se o processo morrer ou o banco impedir a finalização, a recuperação histórica de tentativas com mais de duas horas permanece necessária ao tentar novamente. Isso não transforma o POST em job durável nem elimina limites do proxy.
+
+Na carga inicial administrativa, ter somente o diretório Monday não conclui o bootstrap: enquanto faltar o diretório de uma fonte, uma nova solicitação administrativa normal recarrega os diretórios e a janela inicial de 90 dias. O escopo de Membro/Líder permanece limitado às associações autorizadas.
+
 A resposta contém um resultado geral e um resultado independente para `monday` e `vrMais`:
 
 ```json

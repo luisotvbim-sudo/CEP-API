@@ -3,6 +3,7 @@ namespace CepApi.Infrastructure.Services;
 public sealed class WorkforceIntegrationOptions
 {
     public const string SectionName = "WorkforceIntegrations";
+    public int SynchronizationSourceTimeoutSeconds { get; set; } = 120;
     public MondayDirectoryOptions Monday { get; set; } = new();
     public VrMaisDirectoryOptions VrMais { get; set; } = new();
 }
