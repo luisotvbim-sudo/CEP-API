@@ -56,6 +56,8 @@ ASP.NET usa `__` para chaves hierárquicas do ambiente; arquivos de secrets tamb
 
 As integrações externas e o envio automático de avisos nascem desabilitados. Habilitar exige configuração e homologação; salvar agenda não prova disparo. SMTP enfileirado não prova entrega.
 
+Os e-mails de ativação e recuperação compartilham um HTML simples em `SecurityEmailTemplate.cs`, com versão alternativa em texto. `Email__InvitationActivationUrl` e `Email__PasswordRecoveryUrl` configuram os destinos HTTPS dos botões, por padrão `https://plugincep.com.br/?convite=1` e `https://plugincep.com.br/`. O botão de recuperação abre o portal; o código deve ser usado na tela em que foi solicitado.
+
 ## Contrato e pontos de código
 
 [OpenAPI atual](docs/openapi-current.json) possui 52 caminhos e 72 schemas na base revisada em 04/10/2026. Regenerar em alterações de contrato; a quantidade é evidência da revisão, não requisito fixo de produto. Controllers estão em `src/CepApi.Api/Controllers`; [contexto atual](docs/CONTEXTO-ATUAL.md) aponta serviços e motor por fluxo. Exemplos HTTP: `requests/cep-api.http`.
