@@ -5,6 +5,7 @@ using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Identity;
 using CepApi.Infrastructure.Persistence;
+using CepApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -31,10 +32,14 @@ public sealed class PersonalOverviewEndpointTests(SecurityFixture fixture) : ICl
         var vr = new LiveSource(ExternalWorkforceSource.VrMais, delta, failedVr);
         await using var factory = fixture.Factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
-            services.RemoveAll<IClock>(); services.AddSingleton<IClock>(new Clock());
             services.RemoveAll<IExternalWorkforceTimeSource>();
             services.AddSingleton<IExternalWorkforceTimeSource>(monday);
             services.AddSingleton<IExternalWorkforceTimeSource>(vr);
+            // Fix the business cutoff only. Authentication keeps the real clock so
+            // this fixture's JWT remains valid regardless of the CI execution date.
+            services.RemoveAll<PersonalOverviewService>();
+            services.AddScoped(provider => new PersonalOverviewService(provider.GetRequiredService<AppDbContext>(),
+                new Clock(), new FreshTimeAnalysisService(new Clock(), provider.GetServices<IExternalWorkforceTimeSource>())));
         }));
         using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
         var tokens = await fixture.LoginAsync(client, owner.Email!);
