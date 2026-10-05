@@ -6,6 +6,8 @@ Contrato implementado na base revisada em 04/10/2026. O frontend consumidor deve
 
 O e-mail inclui instruções e link para `https://plugincep.com.br/?convite=1`. A URL é configurável no backend por `Email:InvitationActivationUrl`. Ela não contém código, senha ou e-mail. Na página de login existe também **Recebi um convite**, compatível com códigos já enviados e ainda válidos.
 
+Ativação e recuperação usam o mesmo HTML simples em `SecurityEmailTemplate.cs`, com identidade laranja/cinza, código em destaque, validade em São Paulo e versão alternativa em texto. O botão **Ativar minha conta** abre o formulário existente. Na recuperação, **Abrir portal** usa `Email:PasswordRecoveryUrl` (padrão `https://plugincep.com.br/`); o código deve ser usado na tela em que foi solicitado. Não há novo link direto de recuperação nem mudança de contrato HTTP. Ambos os destinos exigem HTTPS.
+
 O formulário pede e-mail do convite, nome, código, senha e confirmação. Senha entre 12 e 200 caracteres; preservar todos os caracteres, inclusive espaços. Validar confirmação localmente e impedir envio duplicado. Nunca guardar esses dados no armazenamento do navegador nem na URL.
 
 ## Endpoint
