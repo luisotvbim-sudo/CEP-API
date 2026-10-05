@@ -48,6 +48,15 @@ public sealed class FreshTimeAnalysisService(IClock clock, IEnumerable<IExternal
 
     public TimeAnalysisResponse Analyze(WorkforcePerson person, AnalysisWindow window, int toleranceMinutes, Guid settingsVersion,
         Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot> snapshots, List<TimeAnalysisSourceResponse> sourceStates)
+        => AnalyzeCore(person, window, toleranceMinutes, settingsVersion, snapshots, sourceStates, false);
+
+    internal TimeAnalysisResponse ProjectAvailableSource(WorkforcePerson person, AnalysisWindow window, int toleranceMinutes, Guid settingsVersion,
+        ExternalWorkforceSource source, ExternalWorkforceTimeSnapshot snapshot, List<TimeAnalysisSourceResponse> sourceStates)
+        => AnalyzeCore(person, window, toleranceMinutes, settingsVersion, new() { [source] = snapshot }, sourceStates, true);
+
+    private TimeAnalysisResponse AnalyzeCore(WorkforcePerson person, AnalysisWindow window, int toleranceMinutes, Guid settingsVersion,
+        Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot> snapshots, List<TimeAnalysisSourceResponse> sourceStates,
+        bool preserveAvailableSourceValues = false)
     {
         var records = new List<WorkforceTimeRecord>();
         foreach (var (source, sourceRecords) in snapshots.ToDictionary(pair => pair.Key, pair => pair.Value.Records.ToLookup(record => record.ExternalIdentityId, StringComparer.Ordinal)))
@@ -71,7 +80,7 @@ public sealed class FreshTimeAnalysisService(IClock clock, IEnumerable<IExternal
         }
         var complete = snapshots.Count == 2 && snapshots.Values.All(x => x.Complete && x.From <= window.From && x.To >= window.To) &&
             person.MondayIdentity.IsActive && person.VrMaisIdentity.IsActive;
-        var analysis = TimeAnalysisEngine.Analyze(window.From, window.To, window.Cutoff, toleranceMinutes, records, complete);
+        var analysis = TimeAnalysisEngine.Analyze(window.From, window.To, window.Cutoff, toleranceMinutes, records, complete || preserveAvailableSourceValues);
         return new TimeAnalysisResponse(analysis.From, analysis.To, analysis.Cutoff, analysis.ToleranceMinutes, analysis.Days,
             analysis.VrSeconds, analysis.MondaySeconds, analysis.DeltaSeconds, analysis.AbsoluteDivergenceSeconds, analysis.HasIssues, settingsVersion, sourceStates);
     }

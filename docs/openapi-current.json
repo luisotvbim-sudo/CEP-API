@@ -1254,6 +1254,144 @@
         }
       }
     },
+    "/api/v1/me/time-control/overview": {
+      "get": {
+        "tags": [
+          "PersonalOverview"
+        ],
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AnalysisPeriod"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalOverviewResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalOverviewResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalOverviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/plugin/grants": {
       "post": {
         "tags": [
@@ -3804,6 +3942,147 @@
         ],
         "type": "string"
       },
+      "PersonalOverviewDay": {
+        "required": [
+          "day",
+          "status",
+          "partial",
+          "issues"
+        ],
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PersonalOverviewStatus"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonalOverviewPeriod": {
+        "required": [
+          "period",
+          "from",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/AnalysisPeriod"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonalOverviewResponse": {
+        "required": [
+          "period",
+          "cutoff",
+          "periods",
+          "status",
+          "analysis",
+          "attentionDays",
+          "availableSourceDays"
+        ],
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/AnalysisPeriod"
+          },
+          "cutoff": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "periods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalOverviewPeriod"
+            },
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/PersonalOverviewStatus"
+          },
+          "analysis": {
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimeAnalysisResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "attentionDays": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalOverviewDay"
+            },
+            "nullable": true
+          },
+          "availableSourceDays": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalSourceDay"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PersonalOverviewStatus": {
+        "enum": [
+          "regular",
+          "difference",
+          "incomplete",
+          "notAssociated",
+          "inactiveIdentity"
+        ],
+        "type": "string"
+      },
+      "PersonalSourceDay": {
+        "required": [
+          "day",
+          "vrSeconds",
+          "mondaySeconds"
+        ],
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date"
+          },
+          "vrSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "mondaySeconds": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "PluginGrantResponse": {
         "type": "object",
         "properties": {
@@ -5081,6 +5360,9 @@
     },
     {
       "name": "PasswordRecovery"
+    },
+    {
+      "name": "PersonalOverview"
     },
     {
       "name": "PluginGrants"
