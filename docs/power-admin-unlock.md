@@ -1,6 +1,6 @@
 # Liberação administrativa temporária de energia
 
-Esta atualização requer migration e confirmação manual antes do deploy. A integração na main não autoriza publicação na VM. O timer da API deve permanecer suspenso até a confirmação para evitar deploy automático.
+O contrato depende da migration `PowerActionOverrides` e de provisionamento seguro do PIN. Antes de publicar mudança de schema ou configuração, revisar manutenção, backup e compatibilidade; conferir o timer instalado na VM. Este documento não afirma que o deploy está pendente ou que o timer esteja suspenso.
 
 `POST /api/v1/me/time-control/power-action-unlock` exige sessão autenticada e um único campo JSON, `pin`: string com exatamente seis dígitos ASCII. Não enviar usuário, organização, administrador ou prazo. O PIN permanece somente em memória no formulário e no corpo HTTPS; nunca registrar, persistir, devolver, colocar na URL ou enviar ao serviço Windows. Apagar o campo após o envio.
 
@@ -44,7 +44,7 @@ WPF envia o PIN somente à API, descarta o segredo e revalida `power-action-chec
 
 Preservar a contingência existente somente quando a API está realmente inacessível. `401`, `403`, `429`, `500`, `503`, PIN inválido e `indeterminate` não são offline. Não existe fallback novo para PIN local.
 
-## Provisionamento e rotação (somente no deploy confirmado)
+## Provisionamento e rotação
 
 Aplicar a migration `PowerActionOverrides`. Na VM, via SSH com TTY:
 
@@ -55,6 +55,6 @@ sudo docker compose --env-file .env -f compose.production.yaml run --rm --no-dep
 
 Não usar `-T`, pipe, argumento, variável de ambiente ou arquivo contendo o PIN. O comando pede PIN e confirmação via `Console.ReadKey(intercept: true)`, sem eco. Persiste somente hash e nova versão em transação; não inicia workers, não aplica migration automaticamente e não exibe o hash. O serviço migrate usa credenciais do proprietário; o operador precisa de autorização na VM. Escape cancela sem alteração. A rotação invalida todas as janelas anteriores. Auditoria: `power.pin_rotated`, sem segredo.
 
-Antes do provisionamento, desbloqueio retorna 503; verificações normais continuam funcionando. O valor real será introduzido pelo operador na etapa segura do deploy, sem ferramentas que registrem os caracteres digitados.
+Antes do provisionamento, desbloqueio retorna 503; verificações normais continuam funcionando. O valor real é introduzido pelo operador no terminal seguro, sem ferramentas que registrem os caracteres digitados. A existência do comando não comprova provisionamento na VM.
 
 Schemas completos: `docs/openapi-current.json`, exportado da aplicação. Migration: `PowerActionOverrides`, compatível com a versão anterior e com privilégios explícitos para o papel runtime.

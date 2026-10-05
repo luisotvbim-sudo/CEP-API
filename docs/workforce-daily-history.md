@@ -1,6 +1,6 @@
 # Resumo diário do histórico
 
-`GET /api/v1/organization/time-control/history` passa a incluir `days: TimeAnalysisDay[]` em cada `WorkforcePersonHistoryResponse`, preservando `records` e parâmetros. Não há migration ou novo endpoint.
+`GET /api/v1/organization/time-control/history` inclui `days: TimeAnalysisDay[]` em cada `WorkforcePersonHistoryResponse`, preservando `records` e parâmetros. Não há migration ou novo endpoint.
 
 Os dias são as datas civis distintas dos registros visíveis, em ordem crescente. O filtro `source` limita registros e dias visíveis, mas os totais de cada dia usam as duas identidades da mesma pessoa. A consulta mantém o isolamento por organização e o escopo vigente de coordenador, líder e membro, inclusive quando há filtro de pessoa.
 
@@ -15,4 +15,4 @@ Os dias são as datas civis distintas dos registros visíveis, em ordem crescent
 
 Os totais representam dados importados e não comprovam cobertura completa, atualização ou saldo oficial. O consumidor deve informar essa limitação. Não use apenas um sucesso de sincronização da organização como prova de cobertura individual, pois a execução pode ter sido restrita ao escopo de outro usuário.
 
-Testes unitários cobrem soma/deduplicação, sinais, ausência, nulos, timer aberto e dias parciais/futuros. O workflow de integração verifica o campo novo e que filtrar uma fonte não altera o resumo, mantendo os testes existentes de acesso.
+Ao modificar este contrato, verificar soma/deduplicação, sinais, ausência, nulos, timer aberto, dias parciais/futuros, filtro de fonte e acesso por organização/pessoa. Esta revisão documental não registra nova execução desses testes.

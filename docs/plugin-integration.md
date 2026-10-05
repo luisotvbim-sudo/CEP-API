@@ -10,7 +10,7 @@
 
 Serialize a renovação no cliente: só uma chamada de refresh por sessão pode ficar em andamento. Duas chamadas com o mesmo token são tratadas como reutilização e encerram a família. Em caso de resposta perdida, não reutilize automaticamente o token antigo; solicite novo login.
 
-O bearer está vinculado à família da sessão e à versão de segurança do usuário. Logout ou revogação de sessão invalida também os access tokens dessa família na próxima requisição; troca ou recuperação de senha invalida todas as sessões do usuário. Access tokens emitidos antes desta alteração não têm as novas informações e exigem novo login. O formato da resposta HTTP foi preservado.
+O bearer está vinculado à família da sessão e à versão de segurança do usuário. Logout ou revogação de sessão invalida também os access tokens dessa família na próxima requisição; troca ou recuperação de senha invalida todas as sessões do usuário. Tokens sem as informações de família/segurança exigidas são rejeitados e requerem novo login.
 
 Somente o código de recuperação mais recente é aceito. Solicitar outro invalida os anteriores; recuperar ou trocar a senha invalida todos os códigos pendentes. O envio é assíncrono, com retentativas de SMTP.
 
@@ -22,4 +22,7 @@ Somente o código de recuperação mais recente é aceito. Solicitar outro inval
 4. Armazene o grant e as chaves públicas em cache protegido. O grant funciona por no máximo 72 horas e nunca é renovado sem contato com a API.
 5. Não use o grant offline como bearer token da API: seu audience e tipo são diferentes do access token.
 
-Uma suspensão ou remoção de produto impede novas sessões, refreshes e grants. Um grant já emitido continua criptograficamente válido até `exp`; essa é a janela offline deliberada.
+Suspensão da conta ou organização impede novas sessões, refreshes e grants. Alteração dos acessos a produtos pelo endpoint administrativo revoga sessões existentes e altera a versão de segurança; a conta ativa pode voltar a autenticar, mas não obter novo grant de produto removido. Um grant já emitido continua criptograficamente válido até `exp`; essa é a janela offline deliberada.
+
+
+O `installationId` e a versão são obrigatórios e auditados, mas o grant emitido não vincula criptograficamente o token à instalação ou ao hardware. A API possuir este contrato não comprova que os plugins Revit/ZWCAD já o consumam; validar a integração em seus repositórios e hosts reais.

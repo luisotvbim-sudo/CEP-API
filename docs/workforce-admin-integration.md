@@ -55,9 +55,9 @@ O primeiro pedido administrativo sem diretório persistido faz a carga inicial d
 
 Em um pedido normal, `completeSnapshot=true` significa que a fonte completou o período **e as pessoas solicitadas**, não que toda a organização foi recarregada. `receivedCount=0` indica que o diretório não foi consultado nessa tentativa.
 
-O conector escolhe primeiro a coluna Pessoa com título exato `PROFISSIONAL` (sem distinguir maiúsculas/minúsculas), depois uma única coluna cujo título contém “respons”, ou a única coluna Pessoa existente. A escolha é feita no board principal e, se houver coluna Pessoa, no board oculto de subitens clássicos. Se a coluna necessária for ambígua, a fonte falha com `monday_responsible_column_unavailable`. Um item com vários profissionais ainda contribui com as identidades ao diretório, mas suas sessões são ignoradas; subitens sem profissional próprio herdam essa ambiguidade e também são ignorados. Um subitem com profissional próprio único pode ser atribuído normalmente. Não se distribuem nem duplicam horas por suposição. O board de subitens atual não possui coluna Pessoa, portanto herda do pai.
+O conector escolhe primeiro a coluna Pessoa com título exato `PROFISSIONAL` (sem distinguir maiúsculas/minúsculas), depois uma única coluna cujo título contém “respons”, ou a única coluna Pessoa existente. A escolha é feita no board principal e, se houver coluna Pessoa, no board oculto de subitens clássicos. Se a coluna necessária for ambígua, a fonte falha com `monday_responsible_column_unavailable`. Um item com vários profissionais ainda contribui com as identidades ao diretório, mas suas sessões são ignoradas; subitens sem profissional próprio herdam essa ambiguidade e também são ignorados. Um subitem com profissional próprio único pode ser atribuído normalmente. Não se distribuem nem duplicam horas por suposição. Quando o board de subitens não possui coluna Pessoa, os subitens herdam do pai. A configuração real do board precisa ser homologada; não inferir seu estado pela documentação.
 
-Para preencher a lacuna de uma instalação antiga com apenas 60 dias ou reprocessar correções antigas, o coordenador pode usar `POST /api/v1/organization/time-control/synchronizations?full=true`. Isso recarrega diretórios e os últimos 90 dias. Membro e Líder recebem HTTP 403 (`full_sync_forbidden`) ao solicitar `full=true`.
+Para recarregar diretórios ou reprocessar correções fora da janela normal, o coordenador pode usar `POST /api/v1/organization/time-control/synchronizations?full=true`. Isso recarrega diretórios e os últimos 90 dias. Membro e Líder recebem HTTP 403 (`full_sync_forbidden`) ao solicitar `full=true`.
 
 Consultas de estado:
 
@@ -123,7 +123,7 @@ As integrações ficam desabilitadas por padrão. Em ambiente seguro, configure:
 ```text
 WorkforceIntegrations__Monday__Enabled=true
 WorkforceIntegrations__Monday__Token=<segredo>
-WorkforceIntegrations__Monday__BoardId=9920862624
+WorkforceIntegrations__Monday__BoardId=<board-configurado>
 WorkforceIntegrations__Monday__ApiVersion=2026-07
 WorkforceIntegrations__VrMais__Enabled=true
 WorkforceIntegrations__VrMais__Token=<segredo>
@@ -131,6 +131,6 @@ WorkforceIntegrations__VrMais__Token=<segredo>
 
 Os tokens pertencem ao servidor e não são retornados em respostas, logs ou Swagger. Em produção, forneça-os por arquivos em `/run/secrets` ou pelo gerenciador de segredos da plataforma.
 
-## Limite desta entrega
+## Integração com as análises
 
-Esta etapa entrega o cadastro administrativo, a associação das identidades, o convite e o histórico bruto persistido. A conciliação diária completa — calendário, tolerâncias, qualidade, classificação de divergências, justificativas e fluxo do gestor — continua separada para não atribuir significado trabalhista a dados ainda não homologados.
+O histórico inclui [resumo diário importado](workforce-daily-history.md), sem certificar cobertura ou atualidade. [Análises e notificações](time-notifications.md) já têm motor, tolerância global, ocorrências e relatórios persistidos; fontes ao vivo são consultadas pelo processamento correspondente. Calendário completo, justificativas e workflow de casos permanecem planejados na [especificação](conciliacao-horas/especificacao-funcional.md). Não atribuir significado trabalhista nem homologação a dados importados por existir o código.
