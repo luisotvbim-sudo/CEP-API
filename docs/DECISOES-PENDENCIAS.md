@@ -2,7 +2,7 @@
 
 Decisão do responsável em 05/10/2026: reduzir o mínimo de senha de 12 para 6 caracteres, conservando máximo de 200 e demais regras. Aplicável à ativação, recuperação e troca; requer alinhamento do Front e das mensagens de convite.
 
-Revisão: 06/10/2026, base comum `6da062756428255a3ed49c2903bc61ba5cf6476b` das correções empilhadas nos PRs #26 (leitura VR de hoje) e #27 (histórico pessoal e janela de 20 dias). Este registro distingue regras aprovadas, comportamento observado e lacunas. Não transforma implementação em aprovação de produto ou em comprovação operacional. IDs D-01 a D-13 permanecem na [especificação](conciliacao-horas/especificacao-funcional.md).
+Revisão: 06/10/2026. As correções dos PRs #26 (leitura VR de hoje) e #27 (histórico pessoal e janela de 20 dias) foram integradas e publicadas na API sob `78a71e4c6d63e618a221dd9b14eb66328ec0efa2`; a [evidência](RELEASE-API-2026-10-06.md) não substitui homologação das fontes. Este registro distingue regras aprovadas, comportamento observado e lacunas. IDs D-01 a D-13 permanecem na [especificação](conciliacao-horas/especificacao-funcional.md).
 
 ## Regras consolidadas
 
