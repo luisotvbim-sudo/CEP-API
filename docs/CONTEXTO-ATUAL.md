@@ -2,7 +2,7 @@
 
 Política de senha alterada por solicitação do responsável em 05/10/2026: mínimo de 6 e máximo de 200 caracteres para ativação, recuperação e troca. Identity usa mínimo de 6, sem exigir dígitos, maiúsculas, minúsculas ou símbolos. Front e mensagens de convite acompanham a regra. Publicar API antes do cliente; sem migration ou troca das senhas existentes.
 
-Revisão: 06/10/2026. Base da correção de leitura VR: `6da062756428255a3ed49c2903bc61ba5cf6476b`. Esta revisão não comprova SHA em produção. Para retomada: leia [instruções](../AGENTS.md), [índice](README.md), [especificação](conciliacao-horas/especificacao-funcional.md) e [decisões/pendências](DECISOES-PENDENCIAS.md).
+Revisão: 06/10/2026. As correções de leitura VR e histórico pessoal partem de `6da062756428255a3ed49c2903bc61ba5cf6476b` e estão empilhadas nos PRs #26 e #27, respectivamente. Esta revisão não comprova SHA em produção. Para retomada: leia [instruções](../AGENTS.md), [índice](README.md), [especificação](conciliacao-horas/especificacao-funcional.md) e [decisões/pendências](DECISOES-PENDENCIAS.md).
 
 ## Aplicação e fronteiras
 
@@ -26,7 +26,7 @@ Native/plugins usam access JWT RS256 e refresh rotativo. Bearer revalida conta a
 
 Web tem rotas login/refresh/logout próprias. Refresh fica no cookie `__Host-cep-session`, HttpOnly, Secure, SameSite Strict, Path=/, sem Domain, protegido por Data Protection. Expiração absoluta é de até sete dias desde login; rotação não amplia. Operações exigem marcador e Origin de mesma origem. Front guarda access apenas em memória e serializa operações entre abas. Desktop guarda sessão no host com DPAPI, sem tokens no React. Contratos: [web](browser-sessions.md), [plugins](plugin-integration.md), [admin global](system-admin-access.md).
 
-O líder consulta união dos membros vigentes hoje dos times ativos que lidera e próprios dados. O membro consulta próprios dados quando há vínculo vigente. Sem vínculo pode haver resultados vazios. Registros antigos usam o mesmo escopo atual; não existe atribuição das horas ao time histórico. Admin da organização tem acesso completo dentro dela. Configurações globais não ampliam autorização.
+O líder consulta união dos membros vigentes hoje dos times ativos que lidera e próprios dados. Nas consultas de pessoas e histórico, a associação do próprio usuário é acessível mesmo sem vínculo vigente; os colegas ainda dependem do escopo de time atual. Outras rotas podem retornar vazio sem vínculo. Registros antigos usam o mesmo escopo atual para colegas; não existe atribuição das horas ao time histórico. Admin da organização tem acesso completo dentro dela. Configurações globais não ampliam autorização.
 
 ## Pessoas, convites e importação
 
@@ -34,7 +34,7 @@ Convite com download em 06/10/2026: `SecurityEmailTemplate` inclui boas-vindas a
 
 Identidades Monday/VR são persistidas por fonte e ID externo. Associação exige duas identidades ativas, da mesma organização e ainda não utilizadas. Nome não define identidade. Convite, associação, outbox e auditoria são transacionais. Ativação `/auth/invitations/activate` retorna 204 sem sessão; endpoint legado accept retorna tokens. Código vale 48h com limite de tentativas; reenvio administrativo substitui o anterior e preserva associação. Email colocado na fila não significa entregue.
 
-Sincronização normal lê hoje mais dezesseis dias, somente identidades ativas associadas do escopo. Carga inicial administrativa ou `full=true` cobre 90 dias e recarrega diretórios; membro/líder não executa full. Uma execução por organização evita concorrência. Fontes têm resultados independentes; falha não elimina a última cópia válida. Retenção dos importados ocorre após sucesso da fonte. `completeSnapshot` refere-se ao período/pessoas solicitados, não necessariamente a toda organização.
+Sincronização normal lê hoje mais dezenove dias, somente identidades ativas associadas do escopo. Carga inicial administrativa ou `full=true` cobre 90 dias e recarrega diretórios; membro/líder não executa full. Uma execução por organização evita concorrência. Fontes têm resultados independentes; falha não elimina a última cópia válida. Retenção dos importados ocorre após sucesso da fonte. `completeSnapshot` refere-se ao período/pessoas solicitados, não necessariamente a toda organização.
 
 Monday atribui sessão ao profissional único do item/subitem. R.T. e iniciador do timer não definem o titular. Subitem sem profissional próprio herda do pai; ambiguidade impede atribuição presumida. A origem filtra responsáveis e a aplicação recorta sessões por datas após leitura. VR recebe IDs e período, com consultas limitadas. [Contrato de importação](workforce-admin-integration.md).
 
@@ -42,7 +42,7 @@ Correção de sincronização em 05/10/2026: fontes coletam independentemente, p
 
 ## Formas de consultar horas
 
-1. **Histórico importado:** consulta somente banco; retorna registros e `days`. Fonte filtrada limita detalhes/dias, mas resumo diário usa ambas as identidades. Não estende timer até agora; VR de hoje é nulo. Falta de linhas não prova fonte completa. [Resumo diário](workforce-daily-history.md).
+1. **Histórico importado:** consulta somente banco; retorna registros e `days`. Fonte filtrada limita detalhes/dias, mas resumo diário usa ambas as identidades. Não estende timer até agora; o total VR do resumo importado de hoje é nulo mesmo quando há batidas parciais armazenadas. Falta de linhas não prova fonte completa. [Resumo diário](workforce-daily-history.md).
 2. **Relatório persistido:** GET analyses lista snapshots gerados pelo processamento, com corte/versão usados. Não chama fontes nem atualiza resultados anteriores.
 3. **Análise atual:** serviço lê ambas as fontes para o mesmo corte e passa dados ao motor. Para o VR, o adaptador usa `reports/work_days` e consulta `reports/time_cards` quando a linha do dia corrente falta; os totais oficiais dos dias encerrados permanecem no primeiro relatório. Processamento de avisos e energia usam essa leitura; resultado incompleto não confirma coerência.
 4. **Acompanhamento pessoal:** GET próprio com períodos oficiais, classificação do servidor e dias de atenção. Reutiliza a leitura/motor atuais sem gerar relatórios, importar histórico ou autorizar energia. [Contrato aditivo](personal-overview.md), implementado em branch de entrega de 05/10/2026; publicação operacional exige evidência própria.
@@ -71,6 +71,8 @@ Compose produção usa PostgreSQL interno, credenciais separadas owner/runtime, 
 
 Antes de nova entrega, conferir a base efetiva, requisito/contrato, estado local e mudanças concorrentes. Registrar homologação das fontes, versão implantada, execução de jobs, SMTP e aceite Windows com evidência própria. Calendário, workflow, exportações e política histórica continuam pendentes; [decisões](DECISOES-PENDENCIAS.md) orienta seu escopo. Coordenação e fila: [CEP-ORQUESTRADOR](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues).
 
-Sincronização normal em 05/10/2026: janela móvel inclusiva de 17 dias, hoje mais 16 anteriores no fuso São Paulo. Front apresenta Atualizar sprint; isso não altera os períodos oficiais de análise. Full/bootstrap permanece em 90 dias. Sem alteração de schema ou contrato HTTP estrutural; produção depende de publicação.
+Decisão histórica de 05/10/2026: janela móvel inclusiva de 17 dias, hoje mais 16 anteriores no fuso São Paulo. O esclarecimento de 06/10/2026 abaixo substitui esse limite. O Front apresenta Atualizar sprint; a janela móvel não altera os períodos oficiais de análise. Full/bootstrap permanece em 90 dias. Sem alteração de schema ou contrato HTTP estrutural; produção depende de publicação.
+
+Correção solicitada em 06/10/2026 (Issue CEP-ORQUESTRADOR #30): a janela móvel normal passa a 20 dias inclusivos, hoje mais 19 anteriores, para Monday e VR Mais. A associação do próprio usuário é visível em pessoas/histórico mesmo sem vínculo vigente com time; colegas continuam sujeitos ao escopo de time atual. A sincronização pessoal já incluía o usuário e mantém esse escopo. Full/bootstrap permanece em 90 dias; sem alteração de schema ou forma dos DTOs. Publicação e homologação nas fontes não são presumidas.
 
 Refatoração interna de 06/10/2026: projeções administrativas compartilhadas, análise atual injetada no processador, scheduler separado e arquivos próprios para outbox/dispatcher/worker. Contrato, autorização, motor, locks e migrations preservados. Evidências e limites em [auditoria interna](REFATORACAO-INTERNA-2026-10-06.md).

@@ -21,7 +21,7 @@ Correções são realizadas nas fontes. CEP Horas lê, normaliza, calcula e apre
 | Autenticação web/nativa, convites, recuperação, revogação e isolamento por organização | Implementado |
 | Organizações, usuários, produtos, times e vínculos temporais de membro/líder | Implementado |
 | Diretórios Monday/VR, associação por IDs, convite e ativação da pessoa | Implementado |
-| Sincronização normal de 17 dias e inicial/full administrativa de 90 dias | Implementado; cobertura real exige homologação |
+| Sincronização normal de 20 dias inclusivos e inicial/full administrativa de 90 dias | Implementado; cobertura real exige homologação |
 | Histórico bruto e resumo diário importado | Implementado; não certifica cobertura ou atualidade |
 | Motor diário/semanal/sprint, diferença, tolerância e ocorrências de integridade | Implementado |
 | Configurações/agendas globais, relatórios persistidos, envios e caixa individual | Implementado; envio automático nasce desativado |

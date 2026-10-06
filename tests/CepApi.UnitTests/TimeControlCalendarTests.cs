@@ -13,7 +13,7 @@ public sealed class TimeControlCalendarTests
     }
 
     [Theory]
-    [InlineData(false, 17)]
+    [InlineData(false, 20)]
     [InlineData(true, 90)]
     public void Synchronization_period_includes_today_in_sao_paulo(bool fullRefresh, int days)
     {
