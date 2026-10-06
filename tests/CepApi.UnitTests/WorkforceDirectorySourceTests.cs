@@ -321,7 +321,7 @@ public sealed class WorkforceDirectorySourceTests
         using var client = new HttpClient(new JsonHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/employees")
             ? """{"employees":[{"id":84,"first_name":"Ana","last_name":"Silva","email":"ana@example.com","active":true}]}"""
             : """{"data":[{"data":[{"date":"2026-09-20","total_time":"08:00","time_cards":[{"csv_value":"08:00"},{"csv_value":"17:00"}]}]}]}"""));
-        var source = new VrMaisDirectorySource(client, Options.Create(OptionsValue()));
+        var source = new VrMaisDirectorySource(client, Options.Create(OptionsValue()), new SystemClock());
 
         var directory = await source.FetchAsync(TestContext.Current.CancellationToken);
         var identity = Assert.Single(directory.Identities);

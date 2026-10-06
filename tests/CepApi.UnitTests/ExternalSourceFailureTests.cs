@@ -63,7 +63,7 @@ public sealed class ExternalSourceFailureTests
         using var client = new HttpClient(new Handler((_, _) => throw new InvalidOperationException("HTTP must not be called")));
         IExternalWorkforceDirectorySource source = monday
             ? new MondayDirectorySource(client, Options.Create(settings))
-            : new VrMaisDirectorySource(client, Options.Create(settings));
+            : new VrMaisDirectorySource(client, Options.Create(settings), new SystemClock());
         var exception = await Assert.ThrowsAsync<ExternalDirectoryException>(() => source.FetchAsync(Ct));
         Assert.Equal(monday ? "monday_invalid_configuration" : "vr_mais_invalid_configuration", exception.Code);
     }
@@ -120,7 +120,7 @@ public sealed class ExternalSourceFailureTests
             }
             finally { Interlocked.Decrement(ref active); }
         }));
-        IExternalWorkforceTimeSource source = new VrMaisDirectorySource(client, Options.Create(Settings()));
+        IExternalWorkforceTimeSource source = new VrMaisDirectorySource(client, Options.Create(Settings()), new SystemClock());
         var from = new DateOnly(2026, 1, 1);
         var to = new DateOnly(2026, 3, 5);
         var snapshot = await source.FetchAsync(from, to, ["42", "84", "42"], Ct);
@@ -145,13 +145,13 @@ public sealed class ExternalSourceFailureTests
     public async Task VrMais_incomplete_directories_are_not_reported_as_complete(string response, string code)
     {
         using var client = new HttpClient(new Handler((_, _) => Task.FromResult(Json(response))));
-        var source = new VrMaisDirectorySource(client, Options.Create(Settings()));
+        var source = new VrMaisDirectorySource(client, Options.Create(Settings()), new SystemClock());
         var exception = await Assert.ThrowsAsync<ExternalDirectoryException>(() => source.FetchAsync(Ct));
         Assert.Equal(code, exception.Code);
     }
 
     private static IExternalWorkforceDirectorySource Directory(bool monday, HttpClient client)
-        => monday ? new MondayDirectorySource(client, Options.Create(Settings())) : new VrMaisDirectorySource(client, Options.Create(Settings()));
+        => monday ? new MondayDirectorySource(client, Options.Create(Settings())) : new VrMaisDirectorySource(client, Options.Create(Settings()), new SystemClock());
 
     private static WorkforceIntegrationOptions Settings() => new()
     {
