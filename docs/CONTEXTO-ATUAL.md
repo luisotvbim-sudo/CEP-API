@@ -36,6 +36,8 @@ Monday atribui sessão ao profissional único do item/subitem. R.T. e iniciador 
 
 Correção de sincronização em 05/10/2026: fontes coletam independentemente, persistindo progresso sem aguardar a outra. Cada fonte possui prazo de coleta de até 120s para diretório e registros; cancelamento finaliza o estado por token independente. Bootstrap administrativo incompleto é retomado enquanto faltar um dos diretórios. Contrato, limites e códigos estão em [importação](workforce-admin-integration.md); produção depende da integração/implantação da correção.
 
+Correção de proxy em 05/10/2026: o template Nginx concede 180s à rota de sincronização no domínio direto da API, usado pelo desktop. Antes, esse domínio aplicava 30s a todas as rotas, abaixo do orçamento de coleta de 120s. O ajuste exige atualização/reload do Nginx e verificação operacional; não comprova a causa de uma tentativa específica nem altera o contrato HTTP ou a consulta do Monday.
+
 ## Formas de consultar horas
 
 1. **Histórico importado:** consulta somente banco; retorna registros e `days`. Fonte filtrada limita detalhes/dias, mas resumo diário usa ambas as identidades. Não estende timer até agora; VR de hoje é nulo. Falta de linhas não prova fonte completa. [Resumo diário](workforce-daily-history.md).
