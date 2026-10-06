@@ -390,7 +390,7 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
     }
 
     private static TimeNotificationProcessor CreateProcessor(AppDbContext db, IClock clock, IEnumerable<IExternalWorkforceTimeSource> sources)
-        => new(db, clock, new FreshTimeAnalysisService(clock, sources));
+        => new(db, clock, new FreshTimeAnalysisService(clock, sources), new TimeNotificationScheduler(db, clock));
 
     private sealed class FixedClock(DateTimeOffset now) : IClock { public DateTimeOffset UtcNow => now; }
     private sealed class MorningSource(ExternalWorkforceSource source, bool error) : IExternalWorkforceTimeSource
