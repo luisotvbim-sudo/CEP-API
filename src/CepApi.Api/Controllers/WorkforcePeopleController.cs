@@ -35,7 +35,11 @@ public sealed class WorkforcePeopleController(
             .Include(x => x.MondayIdentity).Include(x => x.VrMaisIdentity)
             .Where(x => x.OrganizationId == scopedOrganizationId);
         if (!access.HasFullAccess)
-            query = query.Where(x => x.UserId != null && access.VisibleUserIds.Contains(x.UserId.Value));
+        {
+            // A person's own association remains readable without a current team assignment.
+            var visibleUserIds = access.VisibleUserIds.Append(CurrentUserId).Distinct().ToArray();
+            query = query.Where(x => x.UserId != null && visibleUserIds.Contains(x.UserId.Value));
+        }
         if (!string.IsNullOrWhiteSpace(search))
         {
             var value = search.Trim().ToLower();

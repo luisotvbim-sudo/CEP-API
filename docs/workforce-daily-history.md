@@ -2,7 +2,7 @@
 
 `GET /api/v1/organization/time-control/history` inclui `days: TimeAnalysisDay[]` em cada `WorkforcePersonHistoryResponse`, preservando `records` e parâmetros. Não há migration ou novo endpoint.
 
-Os dias são as datas civis distintas dos registros visíveis, em ordem crescente. O filtro `source` limita registros e dias visíveis, mas os totais de cada dia usam as duas identidades da mesma pessoa. A consulta mantém o isolamento por organização e o escopo vigente de coordenador, líder e membro, inclusive quando há filtro de pessoa.
+Os dias são as datas civis distintas dos registros visíveis, em ordem crescente. O filtro `source` limita registros e dias visíveis, mas os totais de cada dia usam as duas identidades da mesma pessoa. A consulta mantém o isolamento por organização e o escopo vigente de coordenador, líder e membro, inclusive quando há filtro de pessoa. O próprio usuário pode ler sua associação e histórico sem vínculo vigente com time; isso não amplia o acesso a colegas.
 
 `TimeAnalysisEngine.SummarizeImportedDay` reutiliza o motor de análise; diferencia a consulta de dados armazenados da análise com leitura atual das fontes. Retorna durações em segundos, diferença Monday − VR, parcial e motivos de indisponibilidade. Não chama fontes externas nem cria relatórios/notificações.
 

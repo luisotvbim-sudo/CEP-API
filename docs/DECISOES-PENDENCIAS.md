@@ -2,7 +2,7 @@
 
 Decisão do responsável em 05/10/2026: reduzir o mínimo de senha de 12 para 6 caracteres, conservando máximo de 200 e demais regras. Aplicável à ativação, recuperação e troca; requer alinhamento do Front e das mensagens de convite.
 
-Revisão: 06/10/2026, base da correção de leitura VR `6da062756428255a3ed49c2903bc61ba5cf6476b`. Este registro distingue regras aprovadas, comportamento observado e lacunas. Não transforma implementação em aprovação de produto ou em comprovação operacional. IDs D-01 a D-13 permanecem na [especificação](conciliacao-horas/especificacao-funcional.md).
+Revisão: 06/10/2026, base comum `6da062756428255a3ed49c2903bc61ba5cf6476b` das correções empilhadas nos PRs #26 (leitura VR de hoje) e #27 (histórico pessoal e janela de 20 dias). Este registro distingue regras aprovadas, comportamento observado e lacunas. Não transforma implementação em aprovação de produto ou em comprovação operacional. IDs D-01 a D-13 permanecem na [especificação](conciliacao-horas/especificacao-funcional.md).
 
 ## Regras consolidadas
 
@@ -50,6 +50,8 @@ Versão efetivamente implantada, jobs/timers ativos, SMTP real, cobertura Monday
 
 A [fila transversal](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues) registra prioridade, dono, dependências e aceite. Pendência não é autorização automática para mudança funcional. Novas decisões devem ficar versionadas junto à entrega.
 
-Decisão do responsável em 05/10/2026: sincronização normal passa a 17 dias inclusivos (hoje e 16 anteriores), apresentada no Front como Atualizar sprint. Full/bootstrap continua em 90 dias; autorização e períodos oficiais Sprint (1–14 e 15–fim) permanecem iguais. Janela móvel de atualização não redefine o período de análise.
+Decisão histórica do responsável em 05/10/2026: sincronização normal passou a 17 dias inclusivos (hoje e 16 anteriores), apresentada no Front como Atualizar sprint. O esclarecimento de 06/10/2026 abaixo substitui esse limite. Full/bootstrap continua em 90 dias; autorização e períodos oficiais Sprint (1–14 e 15–fim) permanecem iguais. Janela móvel de atualização não redefine o período de análise.
+
+Esclarecimento do responsável em 06/10/2026 (Issue CEP-ORQUESTRADOR #30) substitui apenas a janela normal acima: até 20 dias inclusivos (hoje e 19 anteriores) nas duas fontes. A própria associação e o próprio histórico ficam acessíveis sem vínculo vigente com time; o acesso a colegas ainda depende do vínculo de liderança vigente. Full/bootstrap de 90 dias e períodos oficiais de análise permanecem iguais.
 
 Refatoração de 06/10/2026 mantém as decisões vigentes e não amplia produto. Nenhuma rota sem consumidor local foi retirada. A separação do scheduler exige conservar sua execução sob o lock do processador; ver [registro e validação](REFATORACAO-INTERNA-2026-10-06.md).

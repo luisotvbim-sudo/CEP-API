@@ -3,7 +3,7 @@ namespace CepApi.Application;
 public static class WorkforceHistoryPolicy
 {
     public const int RetentionDays = 90;
-    public const int ManualSyncDays = 17;
+    public const int ManualSyncDays = 20;
 
     public static (DateOnly From, DateOnly To) SyncPeriod(DateTimeOffset now, bool fullRefresh)
     {
