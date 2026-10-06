@@ -20,6 +20,7 @@ x-api: &api
     Email__FromAddress: no-reply@lab.invalid
     TimeNotifications__WorkerEnabled: "false"
     EmailOutbox__Enabled: "false"
+    ReverseProxy__KnownProxies__0: ${READ_LAB_PROXY_IP:-127.0.0.1}
   volumes:
     - protection_keys:/var/lib/cep-api/keys
 

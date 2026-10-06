@@ -12,6 +12,8 @@ Issue transversal: [CEP-ORQUESTRADOR #32](https://github.com/luisotvbim-sudo/CEP
 
 API: `http://127.0.0.1:18080`; Mailpit: `http://127.0.0.1:18025`. A porta SMTP e o PostgreSQL não são publicados. Para parar preservando o clone: `docker compose --env-file .local/read-lab/.env -f deploy/read-lab/compose.yaml stop`. Para voltar ao estado anterior aos testes, restaurar o dump em um **novo volume de laboratório**, repetir neutralização e credenciais locais, depois iniciar a API. A imagem por si só não reverte migrations ou dados. Nunca reutilizar essa configuração contra a VM ou o banco produtivo.
 
+Após subir ou recriar o proxy HTTPS do Front, executar `./deploy/read-lab/Update-TrustedProxy.ps1`. Ele confere a identidade do container de borda e sua rede Docker compartilhada, grava o IP atual somente em `.local/read-lab/.env` e recria apenas a API se necessário. Não ampliar a confiança a uma sub-rede ou a proxies externos. O Front deve chamar esse passo na sua subida; se o container de borda mudar, o login web dependerá da atualização. O volume PostgreSQL não é recriado.
+
 ## Evidência de 06/10/2026 neste host
 
 - Dump recebido por `pg_dump` remoto via SSH sem comando de escrita no banco produtivo; 390.965 bytes e catálogo válido. Clone restaurado em volume `cep-real-read-lab_database`.
@@ -19,5 +21,6 @@ API: `http://127.0.0.1:18080`; Mailpit: `http://127.0.0.1:18025`. A porta SMTP e
 - Login e `/api/v1/me` HTTP 200 com as contas locais `admin@lab.invalid` e `member@lab.invalid`. Os arquivos de senha ficam ignorados em `.local/read-lab/secrets/`; valores não constam aqui.
 - Consulta diária do membro: HTTP 200, fontes `monday` e `vrMais` com estado `complete`; totais do dia presentes em ambas sem registrar valores pessoais. Sincronização pessoal normal: `succeeded` nas duas fontes, `completeSnapshot=true`, cobertura inclusiva 17/09–06/10/2026 (20 dias). Histórico pessoal após a sincronização: uma pessoa autorizada, 98 registros. VR do dia atual conhecido e uma linha local importada.
 - Inspeção de containers: API e Mailpit apenas em loopback, PostgreSQL sem porta host, dois mounts de token apenas na API, workers desligados. Outbox, convites, resets, notificações e PIN/overrides zerados antes do start; agendas automáticas desativadas. Mailpit com zero mensagens após os checks.
+- Após configurar o proxy confiável no arquivo privado e recriar somente a API, login web via `https://localhost:18443` respondeu HTTP 200 e emitiu cookie `__Host-cep-session` com `Secure`, `HttpOnly` e `SameSite=Strict`. A verificação utilizou certificado local de teste.
 
 O laboratório valida as consultas reais para a identidade vinculada ao membro do clone. Não comprova semântica de todas as pessoas/boards, envio externo de email, operação Windows, versão implantada em produção nem interface HTTPS do Front. A integração do Front à API local e a homologação visual continuam na frente CEP-FRONT.
