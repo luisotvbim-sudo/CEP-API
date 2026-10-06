@@ -154,7 +154,7 @@ public sealed class ApiWorkflowTests
         var incrementalSync = (await incrementalSyncResponse.Content.ReadFromJsonAsync<WorkforceSyncResponse>(Json, cancellationToken))!;
         Assert.All(incrementalSync.Sources, source =>
         {
-            Assert.Equal(source.CoverageTo!.Value.AddDays(-6), source.CoverageFrom);
+            Assert.Equal(source.CoverageTo!.Value.AddDays(-16), source.CoverageFrom);
             Assert.Equal(0, source.ReceivedCount);
             Assert.Equal(0, source.TimeRecordCreatedCount);
         });
@@ -286,7 +286,7 @@ public sealed class ApiWorkflowTests
         Assert.Equal(HttpStatusCode.OK, leaderSync.StatusCode);
         var leaderSyncBatch = (await leaderSync.Content.ReadFromJsonAsync<WorkforceSyncResponse>(Json, cancellationToken))!;
         Assert.All(leaderSyncBatch.Sources, source =>
-            Assert.Equal(source.CoverageTo!.Value.AddDays(-6), source.CoverageFrom));
+            Assert.Equal(source.CoverageTo!.Value.AddDays(-16), source.CoverageFrom));
         Assert.Equal(["monday-42"], mondaySource.TimeRequests.Last().ExternalIds);
         Assert.Equal(["vr-84"], vrSource.TimeRequests.Last().ExternalIds);
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -344,7 +344,7 @@ public sealed class ApiWorkflowTests
         Assert.Equal(HttpStatusCode.OK, memberSync.StatusCode);
         var memberSyncBatch = (await memberSync.Content.ReadFromJsonAsync<WorkforceSyncResponse>(Json, cancellationToken))!;
         Assert.All(memberSyncBatch.Sources, source =>
-            Assert.Equal(source.CoverageTo!.Value.AddDays(-6), source.CoverageFrom));
+            Assert.Equal(source.CoverageTo!.Value.AddDays(-16), source.CoverageFrom));
         Assert.Equal(["monday-42"], mondaySource.TimeRequests.Last().ExternalIds);
         Assert.Equal(["vr-84"], vrSource.TimeRequests.Last().ExternalIds);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(

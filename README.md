@@ -11,7 +11,7 @@ A consulta de [acompanhamento pessoal](docs/personal-overview.md) retorna perío
 - Isolamento por organização, papéis SystemAdmin/OrganizationAdmin/User e acesso de membro/líder recalculado pelos vínculos vigentes hoje.
 - Login nativo com JWT RS256 e refresh rotativo; [sessão web](docs/browser-sessions.md) de até sete dias com cookie protegido de mesma origem. Revogação da família e versão de segurança são verificadas no bearer.
 - Convites sem cadastro público, [ativação sem sessão](docs/invitation-activation.md), [reenvio administrativo](docs/people-invitation-resend.md), recuperação e outbox SMTP transacional.
-- [Associação/importação](docs/workforce-admin-integration.md) por IDs Monday/VR; atualização normal de 7 dias e inicial/full administrativa de 90 dias. Fontes falham independentemente.
+- [Associação/importação](docs/workforce-admin-integration.md) por IDs Monday/VR; atualização normal de 17 dias e inicial/full administrativa de 90 dias. Fontes falham independentemente.
 - [Histórico diário](docs/workforce-daily-history.md) importado e [motor/relatórios/notificações](docs/time-notifications.md) com corte único São Paulo, tolerância global inicial de 30 minutos e valores desconhecidos nulos. GET análises lê snapshots; não atualiza fontes.
 - [Energia](docs/power-action-check.md) decidida pela API; [PIN dedicado](docs/power-admin-unlock.md) abre liberação individual de cinco minutos. A execução Windows pertence ao CEP-FRONT.
 - [Grants dos plugins](docs/plugin-integration.md) de no máximo 72 horas; existência deste contrato não comprova consumo pelos plugins reais.
