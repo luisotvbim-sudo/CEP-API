@@ -1,0 +1,96 @@
+name: cep-real-read-lab
+
+x-api: &api
+  image: cep-real-read-lab-api:0730937
+  build:
+    context: ../..
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  environment: &api-env
+    ASPNETCORE_ENVIRONMENT: Staging
+    DataProtection__KeysPath: /var/lib/cep-api/keys
+    Jwt__KeyId: read-lab-0730937
+    Email__Host: mailpit
+    Email__Port: "1025"
+    Email__UseSsl: "false"
+    Email__AllowInsecureTransport: "true"
+    Email__FromAddress: no-reply@lab.invalid
+    TimeNotifications__WorkerEnabled: "false"
+    EmailOutbox__Enabled: "false"
+  volumes:
+    - protection_keys:/var/lib/cep-api/keys
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cep_read_lab
+      POSTGRES_USER: cep_read_lab
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U cep_read_lab -d cep_read_lab"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.27.6
+    ports:
+      - "127.0.0.1:18025:8025"
+
+  migrate:
+    <<: *api
+    command: [migrate]
+    environment:
+      <<: *api-env
+    secrets:
+      - {source: database_connection, target: ConnectionStrings__Postgres}
+      - {source: jwt_private_key, target: Jwt__PrivateKeyPem}
+      - {source: security_code_hmac, target: SecurityCodes__HmacKey}
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  api:
+    <<: *api
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+      WorkforceIntegrations__Monday__Enabled: "true"
+      WorkforceIntegrations__VrMais__Enabled: "true"
+    secrets:
+      - {source: database_connection, target: ConnectionStrings__Postgres}
+      - {source: jwt_private_key, target: Jwt__PrivateKeyPem}
+      - {source: security_code_hmac, target: SecurityCodes__HmacKey}
+      - {source: monday_token, target: WorkforceIntegrations__Monday__Token}
+      - {source: vr_mais_token, target: WorkforceIntegrations__VrMais__Token}
+    ports:
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      mailpit: {condition: service_started}
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  database:
+  protection_keys:
+
+secrets:
+  postgres_password: {file: ../../.local/read-lab/secrets/postgres_password}
+  database_connection:
+    file: ../../.local/read-lab/secrets/database_connection
+  jwt_private_key: {file: ../../.local/read-lab/secrets/jwt-private.pem}
+  security_code_hmac: {file: ../../.local/read-lab/secrets/security-code-hmac}
+  monday_token:
+    file: ${MONDAY_TOKEN_FILE:?Set the local Monday token file path}
+  vr_mais_token:
+    file: ${VR_MAIS_TOKEN_FILE:?Set the local VR Mais token file path}

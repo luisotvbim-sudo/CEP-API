@@ -21,6 +21,7 @@ Calendário completo, workflow de justificativas/casos, ranking avançado e expo
 ## Desenvolvimento com containers
 
 Use `compose.yaml` somente em desenvolvimento; produção possui [guia próprio](deploy/README.md).
+Para validar consultas de leitura Monday/VR contra um clone isolado, consulte o [laboratório local](deploy/read-lab/README.md), registrado na Issue #32. Ele usa Compose, banco, credenciais e chaves próprios; não use o Compose comum nem o de produção nesse fluxo.
 
 ```bash
 docker compose up --build -d
