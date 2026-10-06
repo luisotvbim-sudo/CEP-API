@@ -48,3 +48,5 @@ Fontes: [contrato aprovado](conciliacao-horas/contrato-analises-notificacoes.md)
 Versão efetivamente implantada, jobs/timers ativos, SMTP real, cobertura Monday/VR, restauração externa e homologação Windows exigem evidências operacionais. Health público não responde essas perguntas. Indisponibilidade dos chats antigos não impede análise do código; justificativa não documentada permanece lacuna, sem aprovação inventada.
 
 A [fila transversal](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues) registra prioridade, dono, dependências e aceite. Pendência não é autorização automática para mudança funcional. Novas decisões devem ficar versionadas junto à entrega.
+
+Decisão do responsável em 05/10/2026: sincronização normal passa a 17 dias inclusivos (hoje e 16 anteriores), apresentada no Front como Atualizar sprint. Full/bootstrap continua em 90 dias; autorização e períodos oficiais Sprint (1–14 e 15–fim) permanecem iguais. Janela móvel de atualização não redefine o período de análise.

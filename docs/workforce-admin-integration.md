@@ -1,6 +1,6 @@
 # Contrato administrativo — Monday e VR Mais
 
-Este contrato cobre a etapa de descoberta, associação e convite das pessoas que usarão o CEP Horas. A atualização manual de sete dias pode ser solicitada por qualquer usuário autenticado da organização, limitada às pessoas do seu escopo. Reprocessamento completo, associação, convite e demais mutações administrativas exigem `OrganizationAdmin`; um `SystemAdmin` pode executá-las somente quando seleciona explicitamente a organização por `organizationId`. As consultas de pessoas e histórico também aceitam `User`, mas a API limita o Líder aos times que lidera e o Membro aos próprios dados.
+Este contrato cobre a etapa de descoberta, associação e convite das pessoas que usarão o CEP Horas. A atualização manual de 17 dias pode ser solicitada por qualquer usuário autenticado da organização, limitada às pessoas do seu escopo. Reprocessamento completo, associação, convite e demais mutações administrativas exigem `OrganizationAdmin`; um `SystemAdmin` pode executá-las somente quando seleciona explicitamente a organização por `organizationId`. As consultas de pessoas e histórico também aceitam `User`, mas a API limita o Líder aos times que lidera e o Membro aos próprios dados.
 
 Para usuários da organização, o escopo vem do token e um `organizationId` diferente é rejeitado. Para `SystemAdmin`, `organizationId` é obrigatório nas rotas sob `/organization`.
 
@@ -17,7 +17,7 @@ Para usuários da organização, o escopo vem do token e um `organizationId` dif
 
 ### `POST /api/v1/organization/time-control/synchronizations`
 
-Executa a sincronização das duas fontes. Sem `full=true`, cobre hoje e os seis dias anteriores: Membro atualiza a própria associação; Líder, sua associação e as dos membros de seus times vigentes; Coordenador, todas as pessoas associadas da organização. Um usuário sem nenhuma identidade ativa associada no escopo recebe HTTP 409 (`sync_scope_empty`). Uma organização não pode iniciar outra sincronização enquanto uma execução estiver com estado `running` (HTTP 409, `sync_already_running`).
+Executa a sincronização das duas fontes. Sem `full=true`, cobre hoje e os 16 dias anteriores: Membro atualiza a própria associação; Líder, sua associação e as dos membros de seus times vigentes; Coordenador, todas as pessoas associadas da organização. Um usuário sem nenhuma identidade ativa associada no escopo recebe HTTP 409 (`sync_scope_empty`). Uma organização não pode iniciar outra sincronização enquanto uma execução estiver com estado `running` (HTTP 409, `sync_already_running`).
 
 Os conectores executam independentemente: o diretório e os registros de uma fonte são aplicados assim que ficam disponíveis, sem esperar a outra. A persistência é serializada no contexto da requisição; não há acesso concorrente ao mesmo `DbContext`. A tentativa usa um único período para ambas as fontes.
 
@@ -59,7 +59,7 @@ A resposta contém um resultado geral e um resultado independente para `monday` 
 
 Uma fonte pode falhar sem descartar o resultado válido da outra. Nesse caso, o lote fica `partiallySucceeded`. Identidades ausentes só são marcadas como inativas quando a fonte declara que o retrato recebido está completo.
 
-O primeiro pedido administrativo sem diretório persistido faz a carga inicial de 90 dias. Pedidos normais seguintes usam somente identidades externas já associadas e ativas, sem recarregar os diretórios. O VR Mais recebe os IDs de funcionários e as datas na requisição. O diretório Monday reúne os usuários ativos atribuídos na coluna Pessoa `PROFISSIONAL`, mesmo que não estejam inscritos no board; a coluna `R.T.` não identifica o profissional nem atribui horas. Os itens são filtrados por `PROFISSIONAL` na origem. Um subitem usa seu próprio `PROFISSIONAL` quando preenchido e, caso contrário, herda o profissional do item pai. O conector lê os subitens dos pais filtrados e também consulta diretamente subitens com coluna própria de profissional, para não perder aqueles cujo pai pertence a outra pessoa. A sessão é atribuída ao profissional efetivo, não a `started_user_id`. Como a API do Monday não filtra por data dentro do histórico do cronômetro, a aplicação seleciona localmente as sessões dos sete dias após a leitura. Chaves externas únicas tornam a importação idempotente. Registros anteriores à retenção de 90 dias são removidos após sincronização bem-sucedida da fonte.
+O primeiro pedido administrativo sem diretório persistido faz a carga inicial de 90 dias. Pedidos normais seguintes usam somente identidades externas já associadas e ativas, sem recarregar os diretórios. O VR Mais recebe os IDs de funcionários e as datas na requisição. O diretório Monday reúne os usuários ativos atribuídos na coluna Pessoa `PROFISSIONAL`, mesmo que não estejam inscritos no board; a coluna `R.T.` não identifica o profissional nem atribui horas. Os itens são filtrados por `PROFISSIONAL` na origem. Um subitem usa seu próprio `PROFISSIONAL` quando preenchido e, caso contrário, herda o profissional do item pai. O conector lê os subitens dos pais filtrados e também consulta diretamente subitens com coluna própria de profissional, para não perder aqueles cujo pai pertence a outra pessoa. A sessão é atribuída ao profissional efetivo, não a `started_user_id`. Como a API do Monday não filtra por data dentro do histórico do cronômetro, a aplicação seleciona localmente as sessões dos 17 dias após a leitura. Chaves externas únicas tornam a importação idempotente. Registros anteriores à retenção de 90 dias são removidos após sincronização bem-sucedida da fonte.
 
 Em um pedido normal, `completeSnapshot=true` significa que a fonte completou o período **e as pessoas solicitadas**, não que toda a organização foi recarregada. `receivedCount=0` indica que o diretório não foi consultado nessa tentativa.
 
@@ -72,7 +72,7 @@ Consultas de estado:
 - `GET /api/v1/organization/time-control/synchronizations/latest`
 - `GET /api/v1/organization/time-control/synchronizations/{batchId}`
 
-Membro e Líder consultam somente as sincronizações que eles próprios solicitaram; Coordenador vê todas as tentativas da organização. Uma atualização de sete dias não prova cobertura completa da organização. A listagem de identidades externas continua restrita à administração.
+Membro e Líder consultam somente as sincronizações que eles próprios solicitaram; Coordenador vê todas as tentativas da organização. Uma atualização de 17 dias não prova cobertura completa da organização. A listagem de identidades externas continua restrita à administração.
 
 ## Identidades externas
 
