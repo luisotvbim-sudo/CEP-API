@@ -5,10 +5,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CepApi.Infrastructure.Services;
 
-public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, IEnumerable<IExternalWorkforceTimeSource> sources)
+public sealed class TimeNotificationProcessor(AppDbContext db, IClock clock, FreshTimeAnalysisService freshAnalysis)
 {
-    private readonly FreshTimeAnalysisService freshAnalysis = new(clock, sources);
-
     public async Task TickAsync(CancellationToken cancellationToken)
     {
         // Session lock survives source calls without holding a long database transaction.
