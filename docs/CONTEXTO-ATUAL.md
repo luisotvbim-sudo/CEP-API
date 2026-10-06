@@ -1,5 +1,7 @@
 # Contexto atual — CEP-API
 
+Política de senha alterada por solicitação do responsável em 05/10/2026: mínimo de 6 e máximo de 200 caracteres para ativação, recuperação e troca. Identity usa mínimo de 6, sem exigir dígitos, maiúsculas, minúsculas ou símbolos. Front e mensagens de convite acompanham a regra. Publicar API antes do cliente; sem migration ou troca das senhas existentes.
+
 Revisão: 04/10/2026. Comportamento conferido na base `b36c6e149b42253b44860d98c6ffe44f98c53dd6`; alterações desta revisão são documentação. Não identificar esse SHA como produção sem prova operacional. Para retomada: leia [instruções](../AGENTS.md), [índice](README.md), [especificação](conciliacao-horas/especificacao-funcional.md) e [decisões/pendências](DECISOES-PENDENCIAS.md).
 
 ## Aplicação e fronteiras
