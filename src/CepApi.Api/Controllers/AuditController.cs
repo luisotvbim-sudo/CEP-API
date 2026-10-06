@@ -27,10 +27,6 @@ public sealed class AuditController(
         var query = db.AuditEvents.AsNoTracking().Where(x => x.OrganizationId == scopedOrganizationId);
         if (before is not null) query = query.Where(x => x.CreatedAt < before);
         var events = await query.OrderByDescending(x => x.CreatedAt).Take(Math.Clamp(pageSize, 1, 200)).ToListAsync(cancellationToken);
-        return Ok(events.Select(x => new AuditEventResponse(x.Id, x.OrganizationId, x.ActorUserId, x.TargetUserId,
-            x.Action, ParseDetails(x.DetailsJson), x.IpAddress, x.CreatedAt)).ToArray());
+        return Ok(events.Select(x => x.ToAuditEventResponse()).ToArray());
     }
-
-    private static JsonElement? ParseDetails(string? json)
-        => json is null ? null : JsonSerializer.Deserialize<JsonElement>(json);
 }

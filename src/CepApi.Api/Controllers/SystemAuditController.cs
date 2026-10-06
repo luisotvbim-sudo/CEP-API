@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CepApi.Domain;
 using CepApi.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -20,8 +19,6 @@ public sealed class SystemAuditController(AppDbContext db) : ApiControllerBase
         if (organizationId is not null) query = query.Where(x => x.OrganizationId == organizationId);
         if (before is not null) query = query.Where(x => x.CreatedAt < before);
         var events = await query.OrderByDescending(x => x.CreatedAt).Take(Math.Clamp(pageSize, 1, 200)).ToListAsync(cancellationToken);
-        return Ok(events.Select(x => new AuditEventResponse(x.Id, x.OrganizationId, x.ActorUserId, x.TargetUserId,
-            x.Action, x.DetailsJson is null ? null : JsonSerializer.Deserialize<JsonElement>(x.DetailsJson),
-            x.IpAddress, x.CreatedAt)).ToArray());
+        return Ok(events.Select(x => x.ToAuditEventResponse()).ToArray());
     }
 }
