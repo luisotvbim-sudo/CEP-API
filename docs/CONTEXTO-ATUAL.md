@@ -30,6 +30,8 @@ O líder consulta união dos membros vigentes hoje dos times ativos que lidera e
 
 ## Pessoas, convites e importação
 
+Convite com download em 06/10/2026: `SecurityEmailTemplate` inclui boas-vindas ao CEP Horas pela organização, ativação com senha de 6 a 200 caracteres, instalação MSI com apoio da TI e login posterior. `Email__DesktopDownloadUrl` aponta por padrão a `https://plugincep.com.br/download`, sem acrescentar dados do convite. Publicação depende de página e MSI versionado acessíveis; HTML/texto e HTTPS são validados sem envio real. Recuperação, outbox e contrato HTTP permanecem iguais. [Entrega e prévia](convite-download-msi.md).
+
 Identidades Monday/VR são persistidas por fonte e ID externo. Associação exige duas identidades ativas, da mesma organização e ainda não utilizadas. Nome não define identidade. Convite, associação, outbox e auditoria são transacionais. Ativação `/auth/invitations/activate` retorna 204 sem sessão; endpoint legado accept retorna tokens. Código vale 48h com limite de tentativas; reenvio administrativo substitui o anterior e preserva associação. Email colocado na fila não significa entregue.
 
 Sincronização normal lê hoje mais dezesseis dias, somente identidades ativas associadas do escopo. Carga inicial administrativa ou `full=true` cobre 90 dias e recarrega diretórios; membro/líder não executa full. Uma execução por organização evita concorrência. Fontes têm resultados independentes; falha não elimina a última cópia válida. Retenção dos importados ocorre após sucesso da fonte. `completeSnapshot` refere-se ao período/pessoas solicitados, não necessariamente a toda organização.

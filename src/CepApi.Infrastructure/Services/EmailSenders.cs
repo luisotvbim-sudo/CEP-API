@@ -12,7 +12,7 @@ public sealed class SmtpEmailSender(IOptions<EmailOptions> options) : IEmailSend
     private readonly EmailOptions _options = options.Value;
 
     public Task SendInvitationAsync(string email, string organizationName, string code, DateTimeOffset expiresAt, CancellationToken cancellationToken)
-        => SendAsync(email, "Ative sua conta CEP",
+        => SendAsync(email, "Bem-vindo ao CEP Horas — ative sua conta",
             SecurityEmailTemplate.Invitation(_options, organizationName, code, expiresAt), cancellationToken);
 
     public Task SendPasswordResetAsync(string email, string code, DateTimeOffset expiresAt, CancellationToken cancellationToken)

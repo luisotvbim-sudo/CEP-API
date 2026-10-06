@@ -60,6 +60,8 @@ As integrações externas e o envio automático de avisos nascem desabilitados. 
 
 Os e-mails de ativação e recuperação compartilham um HTML simples em `SecurityEmailTemplate.cs`, com versão alternativa em texto. `Email__InvitationActivationUrl` e `Email__PasswordRecoveryUrl` configuram os destinos HTTPS dos botões, por padrão `https://plugincep.com.br/?convite=1` e `https://plugincep.com.br/`. O botão de recuperação abre o portal; o código deve ser usado na tela em que foi solicitado.
 
+O convite dá boas-vindas ao CEP Horas pela organização e orienta ativar a conta, instalar com auxílio da TI e entrar com e-mail e senha. O segundo botão, **Baixar CEP Horas para Windows — MSI**, usa `Email__DesktopDownloadUrl` (padrão `https://plugincep.com.br/download`). Nos arquivos Compose, `DESKTOP_DOWNLOAD_URL` configura esse valor. O endereço precisa ser HTTPS público, sem credenciais ou dados do convite; a página deve disponibilizar o MSI versionado antes de publicar esta mudança. A API não anexa o instalador, não acrescenta código/e-mail ao download e não altera a recuperação ou a ativação sem sessão. Prévia sintética: [convite com MSI](docs/convite-download-msi.md).
+
 ## Contrato e pontos de código
 
 [OpenAPI atual](docs/openapi-current.json) possui 52 caminhos e 72 schemas na base revisada em 04/10/2026. Regenerar em alterações de contrato; a quantidade é evidência da revisão, não requisito fixo de produto. Controllers estão em `src/CepApi.Api/Controllers`; [contexto atual](docs/CONTEXTO-ATUAL.md) aponta serviços e motor por fluxo. Exemplos HTTP: `requests/cep-api.http`.

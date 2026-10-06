@@ -6,11 +6,11 @@ namespace CepApi.Infrastructure.Services;
 internal static class SecurityEmailTemplate
 {
     public static MimeEntity Invitation(EmailOptions options, string organizationName, string code, DateTimeOffset expiresAt)
-        => Build("Ative sua conta CEP", $"Você foi convidado para {organizationName}.",
-            "Clique no botão para informar seu e-mail, nome e o código abaixo. Crie uma senha de pelo menos 6 caracteres.",
+        => Build("Bem-vindo ao CEP Horas", $"Você foi convidado para acessar o CEP Horas pela organização {organizationName}.",
+            "1. Ative sua conta: clique no botão, informe o e-mail que recebeu este convite, seu nome e o código abaixo. Crie uma senha de 6 a 200 caracteres.",
             "Código de ativação", code, expiresAt, "Ativar minha conta", options.InvitationActivationUrl,
-            "O código não é sua senha. Depois de ativar, entre com seu e-mail e a senha criada. Se o convite expirar, peça um novo ao administrador.",
-            "Se não esperava este convite, ignore esta mensagem.");
+            "O código de ativação não é sua senha. Se o convite expirar, peça um novo ao administrador.",
+            "Se não esperava este convite, ignore esta mensagem. Não compartilhe seu código de ativação.", options.DesktopDownloadUrl);
 
     public static MimeEntity PasswordReset(EmailOptions options, string code, DateTimeOffset expiresAt)
         => Build("Recupere seu acesso", "Recebemos uma solicitação para redefinir sua senha.",
@@ -20,15 +20,43 @@ internal static class SecurityEmailTemplate
             "Se não solicitou esta alteração, ignore esta mensagem. Sua senha continua a mesma. Não compartilhe este código.");
 
     private static MimeEntity Build(string title, string introduction, string instructions, string codeLabel,
-        string code, DateTimeOffset expiresAt, string action, string actionUrl, string help, string footer)
+        string code, DateTimeOffset expiresAt, string action, string actionUrl, string help, string footer,
+        string? desktopDownloadUrl = null)
     {
         if (!Uri.TryCreate(actionUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
             throw new InvalidOperationException("Security email links must use an absolute HTTPS URL.");
 
+        var downloadText = string.Empty;
+        var downloadHtml = string.Empty;
+        if (desktopDownloadUrl is not null)
+        {
+            if (!Uri.TryCreate(desktopDownloadUrl, UriKind.Absolute, out var downloadUri)
+                || downloadUri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(downloadUri.UserInfo))
+                throw new InvalidOperationException("Desktop download links must use an absolute HTTPS URL without credentials.");
+
+            const string downloadTitle = "2. Instale o aplicativo para Windows";
+            const string downloadInstructions = "Depois de ativar a conta, baixe o instalador MSI. Peça auxílio à TI para verificar os requisitos do computador e realizar a instalação.";
+            const string downloadAction = "Baixar CEP Horas para Windows — MSI";
+            const string loginTitle = "3. Entre no CEP Horas";
+            const string loginInstructions = "Abra o aplicativo e entre com seu e-mail e a senha criada na ativação da conta.";
+            downloadText = $"{downloadTitle}\n{downloadInstructions}\n{downloadAction}: {desktopDownloadUrl}\n\n{loginTitle}\n{loginInstructions}\n\n";
+            downloadHtml = $"""
+                <h2 style="margin:28px 0 12px;font-size:20px;line-height:1.3;color:#30312e;">{Encode(downloadTitle)}</h2>
+                <p style="margin:0 0 16px;">{Encode(downloadInstructions)}</p>
+                <table role="presentation" cellspacing="0" cellpadding="0" width="100%">
+                  <tr><td bgcolor="#292c28" style="border-radius:8px;text-align:center;mso-padding-alt:14px 20px;">
+                    <a href="{Encode(desktopDownloadUrl)}" style="display:block;padding:14px 20px;border:1px solid #292c28;border-radius:8px;background-color:#292c28;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;">{Encode(downloadAction)}</a>
+                  </td></tr>
+                </table>
+                <h2 style="margin:28px 0 12px;font-size:20px;line-height:1.3;color:#30312e;">{Encode(loginTitle)}</h2>
+                <p style="margin:0;">{Encode(loginInstructions)}</p>
+                """;
+        }
+
         var validity = $"Válido até {TimeZoneInfo.ConvertTimeBySystemTimeZoneId(expiresAt, "America/Sao_Paulo"):dd/MM/yyyy HH:mm} (horário de São Paulo).";
         return new BodyBuilder
         {
-            TextBody = $"{title}\n\n{introduction}\n\n{instructions}\n\n{codeLabel}: {code}\n{validity}\n\n{action}: {actionUrl}\n\n{help}\n\n{footer}",
+            TextBody = $"{title}\n\n{introduction}\n\n{instructions}\n\n{codeLabel}: {code}\n{validity}\n\n{action}: {actionUrl}\n\n{downloadText}{help}\n\n{footer}",
             HtmlBody = $"""
                 <!doctype html>
                 <html lang="pt-BR">
@@ -56,6 +84,7 @@ internal static class SecurityEmailTemplate
                               <a href="{Encode(actionUrl)}" style="display:inline-block;padding:14px 24px;border:1px solid #c54c10;border-radius:8px;background-color:#c54c10;color:#ffffff;text-decoration:none;font-size:16px;font-weight:bold;">{Encode(action)}</a>
                             </td></tr>
                           </table>
+                          {downloadHtml}
                           <p style="margin:24px 0 0;font-size:13px;color:#74756f;">{Encode(help)}</p>
                         </td></tr>
                         <tr><td style="padding:20px 24px;border-top:1px solid #e2e3de;font-size:12px;line-height:1.6;color:#74756f;">{Encode(footer)}</td></tr>

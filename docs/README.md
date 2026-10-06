@@ -18,7 +18,7 @@ Entrada para retomada em qualquer computador, revisada em 04/10/2026. A base de 
 | Plugins/nativo | [Sessão e grant offline](plugin-integration.md) |
 | SystemAdmin | [Seleção e isolamento de organização](system-admin-access.md) |
 | Domínios | [Permissão de novos convites/cadastros](allowed-email-domains.md) |
-| Convites | [Ativação](invitation-activation.md) e [reenvio](people-invitation-resend.md) |
+| Convites | [Ativação](invitation-activation.md), [convite com download MSI](convite-download-msi.md) e [reenvio](people-invitation-resend.md) |
 | Fontes/pessoas | [Importação e associação Monday/VR](workforce-admin-integration.md) |
 | Histórico | [Resumo diário importado](workforce-daily-history.md) |
 | Acompanhamento pessoal | [Consulta atual, situação, períodos e qualidade](personal-overview.md) |
