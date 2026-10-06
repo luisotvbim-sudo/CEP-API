@@ -109,7 +109,7 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         db.Add(dispatch);
         await db.SaveChangesAsync(Ct);
-        var processor = new TimeNotificationProcessor(db, new FixedClock(now), [new FakeSource(ExternalWorkforceSource.Monday), new FakeSource(ExternalWorkforceSource.VrMais)]);
+        var processor = CreateProcessor(db, new FixedClock(now), [new FakeSource(ExternalWorkforceSource.Monday), new FakeSource(ExternalWorkforceSource.VrMais)]);
         await processor.TickAsync(Ct);
         await processor.TickAsync(Ct);
         Assert.Equal(NotificationDispatchStatus.Completed, dispatch.Status);
@@ -183,7 +183,7 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, OrganizationStatus.Suspended), Ct);
         else
             await db.Users.Where(x => x.Id == admin.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.Role, UserRole.User), Ct);
-        await new TimeNotificationProcessor(db, new FixedClock(now),
+        await CreateProcessor(db, new FixedClock(now),
             [new FakeSource(ExternalWorkforceSource.Monday), new FakeSource(ExternalWorkforceSource.VrMais)]).TickAsync(Ct);
         Assert.Equal(NotificationDispatchStatus.Failed, dispatch.Status);
         Assert.Equal("dispatch_scope_revoked", dispatch.ErrorCode);
@@ -221,7 +221,7 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         };
         db.Add(dispatch);
         await db.SaveChangesAsync(Ct);
-        await new TimeNotificationProcessor(db, new FixedClock(now),
+        await CreateProcessor(db, new FixedClock(now),
             [new FakeSource(ExternalWorkforceSource.Monday, fail: true), new FakeSource(ExternalWorkforceSource.VrMais)]).TickAsync(Ct);
         Assert.Equal("analysis_sources_incomplete", dispatch.ErrorCode);
         var report = await db.Set<TimeAnalysisReport>().SingleAsync(x => x.DispatchId == dispatch.Id, Ct);
@@ -246,7 +246,7 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         await db.SaveChangesAsync(Ct);
         try
         {
-            var processor = new TimeNotificationProcessor(db, new FixedClock(DateTimeOffset.Parse("2026-09-26T14:50:00Z")),
+            var processor = CreateProcessor(db, new FixedClock(DateTimeOffset.Parse("2026-09-26T14:50:00Z")),
                 [new FakeSource(ExternalWorkforceSource.Monday), new FakeSource(ExternalWorkforceSource.VrMais)]);
             await processor.TickAsync(Ct);
             await processor.TickAsync(Ct);
@@ -317,7 +317,7 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         try
         {
             var now = DateTimeOffset.Parse("2026-09-29T13:00:00Z");
-            var processor = new TimeNotificationProcessor(db, new FixedClock(now),
+            var processor = CreateProcessor(db, new FixedClock(now),
                 [new MorningSource(ExternalWorkforceSource.Monday, yesterdayError), new MorningSource(ExternalWorkforceSource.VrMais, yesterdayError)]);
             await processor.TickAsync(Ct);
             await processor.TickAsync(Ct);
@@ -355,7 +355,7 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         await db.SaveChangesAsync(Ct);
         try
         {
-            var processor = new TimeNotificationProcessor(db, new FixedClock(DateTimeOffset.Parse("2026-09-29T16:10:00Z")),
+            var processor = CreateProcessor(db, new FixedClock(DateTimeOffset.Parse("2026-09-29T16:10:00Z")),
                 [new MorningSource(ExternalWorkforceSource.Monday, true), new MorningSource(ExternalWorkforceSource.VrMais, true)]);
             await processor.TickAsync(Ct);
             await processor.TickAsync(Ct);
@@ -388,6 +388,9 @@ public sealed class TimeNotificationTests(SecurityFixture fixture) : IClassFixtu
         await db.SaveChangesAsync(Ct);
         return notification.Id;
     }
+
+    private static TimeNotificationProcessor CreateProcessor(AppDbContext db, IClock clock, IEnumerable<IExternalWorkforceTimeSource> sources)
+        => new(db, clock, new FreshTimeAnalysisService(clock, sources), new TimeNotificationScheduler(db, clock));
 
     private sealed class FixedClock(DateTimeOffset now) : IClock { public DateTimeOffset UtcNow => now; }
     private sealed class MorningSource(ExternalWorkforceSource source, bool error) : IExternalWorkforceTimeSource

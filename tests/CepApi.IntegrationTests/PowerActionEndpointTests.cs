@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using CepApi.Api.Controllers;
+using CepApi.Api.Services;
+using CepApi.Infrastructure.Services;
 using CepApi.Application;
 using CepApi.Domain;
 using CepApi.Infrastructure.Identity;
@@ -34,6 +37,11 @@ public sealed class PowerActionEndpointTests(SecurityFixture fixture) : IClassFi
             services.RemoveAll<IExternalWorkforceTimeSource>();
             services.AddSingleton<IExternalWorkforceTimeSource>(monday);
             services.AddSingleton<IExternalWorkforceTimeSource>(vr);
+            // Fix only the business cutoff; authentication retains its real clock.
+            services.AddControllers().AddControllersAsServices();
+            services.AddTransient(provider => new PowerActionController(provider.GetRequiredService<AppDbContext>(),
+                new BusinessClock(), new FreshTimeAnalysisService(new BusinessClock(), provider.GetServices<IExternalWorkforceTimeSource>()),
+                provider.GetRequiredService<PowerActionUnlockService>()));
         }));
         using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
         var tokens = await fixture.LoginAsync(client, owner.Email!);
@@ -86,6 +94,11 @@ public sealed class PowerActionEndpointTests(SecurityFixture fixture) : IClassFi
         db.Add(person);
         await db.SaveChangesAsync(Ct);
         return person;
+    }
+
+    private sealed class BusinessClock : IClock
+    {
+        public DateTimeOffset UtcNow => DateTimeOffset.Parse("2026-10-05T15:00:00Z");
     }
 
     private sealed class LiveSource(ExternalWorkforceSource source, int delta, bool incomplete) : IExternalWorkforceTimeSource

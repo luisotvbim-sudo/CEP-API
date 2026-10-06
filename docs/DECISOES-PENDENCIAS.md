@@ -50,3 +50,5 @@ Versão efetivamente implantada, jobs/timers ativos, SMTP real, cobertura Monday
 A [fila transversal](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues) registra prioridade, dono, dependências e aceite. Pendência não é autorização automática para mudança funcional. Novas decisões devem ficar versionadas junto à entrega.
 
 Decisão do responsável em 05/10/2026: sincronização normal passa a 17 dias inclusivos (hoje e 16 anteriores), apresentada no Front como Atualizar sprint. Full/bootstrap continua em 90 dias; autorização e períodos oficiais Sprint (1–14 e 15–fim) permanecem iguais. Janela móvel de atualização não redefine o período de análise.
+
+Refatoração de 06/10/2026 mantém as decisões vigentes e não amplia produto. Nenhuma rota sem consumidor local foi retirada. A separação do scheduler exige conservar sua execução sob o lock do processador; ver [registro e validação](REFATORACAO-INTERNA-2026-10-06.md).
