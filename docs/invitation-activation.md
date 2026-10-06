@@ -6,7 +6,9 @@ Contrato implementado na base revisada em 04/10/2026. O frontend consumidor deve
 
 O e-mail inclui instruções e link para `https://plugincep.com.br/?convite=1`. A URL é configurável no backend por `Email:InvitationActivationUrl`. Ela não contém código, senha ou e-mail. Na página de login existe também **Recebi um convite**, compatível com códigos já enviados e ainda válidos.
 
-Ativação e recuperação usam o mesmo HTML simples em `SecurityEmailTemplate.cs`, com identidade laranja/cinza, código em destaque, validade em São Paulo e versão alternativa em texto. O botão **Ativar minha conta** abre o formulário existente. Na recuperação, **Abrir portal** usa `Email:PasswordRecoveryUrl` (padrão `https://plugincep.com.br/`); o código deve ser usado na tela em que foi solicitado. Não há novo link direto de recuperação nem mudança de contrato HTTP. Ambos os destinos exigem HTTPS.
+Ativação e recuperação usam o mesmo HTML simples em `SecurityEmailTemplate.cs`, com identidade laranja/cinza, código em destaque, validade em São Paulo e versão alternativa em texto. O convite dá boas-vindas ao CEP Horas pela organização e apresenta a ordem: ativar a conta, instalar o aplicativo com auxílio da TI e entrar com e-mail e senha. O botão **Ativar minha conta** abre o formulário existente. **Baixar CEP Horas para Windows — MSI** abre `Email:DesktopDownloadUrl` (padrão `https://plugincep.com.br/download`), separado do código e do e-mail. A página de download deve apontar ao MSI versionado publicamente acessível antes da publicação do backend; release em rascunho não atende esse requisito. O remetente não anexa o MSI nem transfere dados do convite ao link.
+
+Na recuperação, **Abrir portal** usa `Email:PasswordRecoveryUrl` (padrão `https://plugincep.com.br/`); o código deve ser usado na tela em que foi solicitado. Não há botão de download na recuperação, novo link direto de recuperação ou mudança de contrato HTTP. Todos os destinos exigem HTTPS; o de download também recusa credenciais na URL. Nos arquivos Compose, `DESKTOP_DOWNLOAD_URL` alimenta `Email__DesktopDownloadUrl`. Ver [entrega e prévia sintética](convite-download-msi.md).
 
 O formulário pede e-mail do convite, nome, código, senha e confirmação. Senha entre 6 e 200 caracteres; preservar todos os caracteres, inclusive espaços. Validar confirmação localmente e impedir envio duplicado. Nunca guardar esses dados no armazenamento do navegador nem na URL.
 
@@ -18,7 +20,7 @@ O formulário pede e-mail do convite, nome, código, senha e confirmação. Senh
 {"email":"pessoa@example.com","code":"codigo-recebido","displayName":"Pessoa","password":"senha-escolhida","client":null}
 ```
 
-Usa `AcceptInvitationRequest`: email obrigatório até 320 caracteres; code até 50; displayName até 200; password 12–200. `client` opcional.
+Usa `AcceptInvitationRequest`: email obrigatório até 320 caracteres; code até 50; displayName até 200; password 6–200. `client` opcional.
 
 Sucesso: **204 sem corpo, sem cookies e sem criação de sessão ou emissão de tokens**. A conta é ativada, recebe os acessos do convite e conserva a associação Monday/VR quando existir. Mostrar “Conta ativada” e retornar ao login. O navegador entra via `/auth/web/login`; desktop utiliza seu login nativo. O código não é uma senha de login.
 

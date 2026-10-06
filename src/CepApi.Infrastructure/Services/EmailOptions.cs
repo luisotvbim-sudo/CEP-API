@@ -12,5 +12,6 @@ public sealed class EmailOptions
     public string FromAddress { get; set; } = "no-reply@cep-api.local";
     public string FromName { get; set; } = "CEP Plugins";
     public string InvitationActivationUrl { get; set; } = "https://plugincep.com.br/?convite=1";
+    public string DesktopDownloadUrl { get; set; } = "https://plugincep.com.br/download";
     public string PasswordRecoveryUrl { get; set; } = "https://plugincep.com.br/";
 }

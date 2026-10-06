@@ -56,6 +56,77 @@ public sealed class SecurityEmailTemplateTests
         Assert.Contains("<123456>", message.TextBody);
     }
 
+    [Fact]
+    public void Invitation_guides_activation_installation_and_login_with_independent_download_url()
+    {
+        var options = new EmailOptions
+        {
+            DesktopDownloadUrl = "https://portal.example/download?channel=beta&label=\"Windows\""
+        };
+        using var message = new MimeMessage
+        {
+            Body = SecurityEmailTemplate.Invitation(options, "Organização fictícia", "fixture-code", Expiration)
+        };
+        using var stream = new MemoryStream();
+        message.WriteTo(stream, TestContext.Current.CancellationToken);
+        stream.Position = 0;
+        using var parsed = MimeMessage.Load(stream, TestContext.Current.CancellationToken);
+
+        Assert.IsType<MultipartAlternative>(parsed.Body);
+        foreach (var content in new[] { parsed.TextBody, System.Net.WebUtility.HtmlDecode(parsed.HtmlBody) })
+        {
+            Assert.Contains("Bem-vindo ao CEP Horas", content);
+            Assert.Contains("Organização fictícia", content);
+            Assert.Contains("6 a 200 caracteres", content);
+            Assert.Contains("Ativar minha conta", content);
+            Assert.Contains("Baixar CEP Horas para Windows — MSI", content);
+            Assert.Contains("Peça auxílio à TI", content);
+            Assert.Contains("entre com seu e-mail e a senha criada", content);
+            Assert.Contains("Não compartilhe seu código", content);
+        }
+
+        var html = Assert.IsType<string>(parsed.HtmlBody);
+        var links = System.Text.RegularExpressions.Regex.Matches(html, "href=\"([^\"]+)\"")
+            .Select(match => System.Net.WebUtility.HtmlDecode(match.Groups[1].Value)).ToArray();
+        Assert.Equal(new[] { options.InvitationActivationUrl, options.DesktopDownloadUrl }, links);
+        Assert.All(links, link => Assert.DoesNotContain("fixture-code", link));
+        Assert.All(links, link => Assert.DoesNotContain("Organização", link));
+        Assert.Contains(options.DesktopDownloadUrl, parsed.TextBody);
+        Assert.Contains("&amp;label=&quot;Windows&quot;", parsed.HtmlBody);
+    }
+
+    [Fact]
+    public void Recovery_keeps_its_existing_action_and_does_not_use_desktop_download_configuration()
+    {
+        var options = new EmailOptions { DesktopDownloadUrl = "javascript:invalid" };
+        using var message = new MimeMessage
+        {
+            Body = SecurityEmailTemplate.PasswordReset(options, "fixture-code", Expiration)
+        };
+
+        var html = Assert.IsType<string>(message.HtmlBody);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(html, "href=\""));
+        Assert.Contains(options.PasswordRecoveryUrl, message.TextBody);
+        Assert.Contains("Volte à tela de recuperação", message.TextBody);
+        Assert.Contains("Somente o código mais recente será válido", message.TextBody);
+        Assert.DoesNotContain("MSI", message.TextBody);
+        Assert.DoesNotContain("MSI", message.HtmlBody);
+        Assert.DoesNotContain(options.DesktopDownloadUrl, message.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("http://portal.example/download")]
+    [InlineData("/download")]
+    [InlineData("")]
+    [InlineData("https://user:password@portal.example/download")]
+    public void Invitation_rejects_invalid_or_credential_bearing_download_urls(string url)
+    {
+        var options = new EmailOptions { DesktopDownloadUrl = url };
+
+        Assert.Throws<InvalidOperationException>(() => SecurityEmailTemplate.Invitation(options, "CEP", "123456", Expiration));
+    }
+
     [Theory]
     [InlineData("javascript:alert(1)")]
     [InlineData("http://portal.example/")]

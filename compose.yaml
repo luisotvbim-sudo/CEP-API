@@ -32,6 +32,7 @@ services:
       Email__Port: 1025
       Email__UseSsl: "false"
       Email__AllowInsecureTransport: "true"
+      Email__DesktopDownloadUrl: ${DESKTOP_DOWNLOAD_URL:-https://plugincep.com.br/download}
     depends_on:
       postgres:
         condition: service_healthy

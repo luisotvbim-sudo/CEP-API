@@ -22,6 +22,7 @@ x-api: &api
     Email__Port: ${SMTP_PORT:-587}
     Email__UseSsl: ${SMTP_USE_SSL:-false}
     Email__FromAddress: ${SMTP_FROM:?Set sender address}
+    Email__DesktopDownloadUrl: ${DESKTOP_DOWNLOAD_URL:-https://plugincep.com.br/download}
     AllowedHosts: ${API_DOMAIN:?Set API domain};${FRONTEND_DOMAIN:-cep.lat};localhost
     ReverseProxy__KnownProxies__0: 172.30.10.2
   volumes:
