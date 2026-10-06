@@ -1,6 +1,6 @@
 # Documentação atual — CEP-API
 
-Entrada para retomada em qualquer computador, revisada em 04/10/2026. A base de código conferida é `b36c6e149b42253b44860d98c6ffe44f98c53dd6`; atualizar os documentos quando o comportamento mudar. [README do projeto](../README.md) contém execução/validação e [AGENTS](../AGENTS.md) define as fronteiras de trabalho.
+Entrada para retomada em qualquer computador. A base funcional da API publicada em 06/10/2026 foi `78a71e4c6d63e618a221dd9b14eb66328ec0efa2`; consulte a [evidência de publicação](RELEASE-API-2026-10-06.md) e confira separadamente qualquer alteração posterior. [README do projeto](../README.md) contém execução/validação e [AGENTS](../AGENTS.md) define as fronteiras de trabalho.
 
 ## Leia primeiro
 
@@ -8,6 +8,7 @@ Entrada para retomada em qualquer computador, revisada em 04/10/2026. A base de 
 2. [Especificação funcional](conciliacao-horas/especificacao-funcional.md): RN/RF/CA/D, implementação e requisitos planejados.
 3. [Decisões e pendências](DECISOES-PENDENCIAS.md): definições consolidadas e lacunas.
 4. [OpenAPI](openapi-current.json): rotas/DTOs efetivos da base publicada no snapshot.
+5. [Publicação da API em 06/10/2026](RELEASE-API-2026-10-06.md): SHA, imagem, validação e limites.
 
 ## Contratos especializados
 

@@ -1,8 +1,8 @@
 # Contexto atual — CEP-API
 
-Política de senha alterada por solicitação do responsável em 05/10/2026: mínimo de 6 e máximo de 200 caracteres para ativação, recuperação e troca. Identity usa mínimo de 6, sem exigir dígitos, maiúsculas, minúsculas ou símbolos. Front e mensagens de convite acompanham a regra. Publicar API antes do cliente; sem migration ou troca das senhas existentes.
+Política de senha alterada por solicitação do responsável em 05/10/2026: mínimo de 6 e máximo de 200 caracteres para ativação, recuperação e troca. Identity usa mínimo de 6, sem exigir dígitos, maiúsculas, minúsculas ou símbolos. Front e mensagens de convite acompanham a regra; sem migration ou troca das senhas existentes.
 
-Revisão: 06/10/2026. As correções de leitura VR e histórico pessoal partem de `6da062756428255a3ed49c2903bc61ba5cf6476b` e estão empilhadas nos PRs #26 e #27, respectivamente. Esta revisão não comprova SHA em produção. Para retomada: leia [instruções](../AGENTS.md), [índice](README.md), [especificação](conciliacao-horas/especificacao-funcional.md) e [decisões/pendências](DECISOES-PENDENCIAS.md).
+Revisão: 06/10/2026. Os PRs #26 (leitura VR de hoje) e #27 (histórico pessoal e janela de 20 dias) foram integrados à `main` e publicados na API sob `78a71e4c6d63e618a221dd9b14eb66328ec0efa2`. A [evidência de publicação](RELEASE-API-2026-10-06.md) distingue SHA, imagem, health e limites das fontes. Para retomada: leia [instruções](../AGENTS.md), [índice](README.md), [especificação](conciliacao-horas/especificacao-funcional.md) e [decisões/pendências](DECISOES-PENDENCIAS.md).
 
 ## Aplicação e fronteiras
 
@@ -38,7 +38,7 @@ Sincronização normal lê hoje mais dezenove dias, somente identidades ativas a
 
 Monday atribui sessão ao profissional único do item/subitem. R.T. e iniciador do timer não definem o titular. Subitem sem profissional próprio herda do pai; ambiguidade impede atribuição presumida. A origem filtra responsáveis e a aplicação recorta sessões por datas após leitura. VR recebe IDs e período, com consultas limitadas. [Contrato de importação](workforce-admin-integration.md).
 
-Correção de sincronização em 05/10/2026: fontes coletam independentemente, persistindo progresso sem aguardar a outra. Cada fonte possui prazo de coleta de até 120s para diretório e registros; cancelamento finaliza o estado por token independente. Bootstrap administrativo incompleto é retomado enquanto faltar um dos diretórios. Contrato, limites e códigos estão em [importação](workforce-admin-integration.md); produção depende da integração/implantação da correção.
+Correção de sincronização em 05/10/2026: fontes coletam independentemente, persistindo progresso sem aguardar a outra. Cada fonte possui prazo de coleta de até 120s para diretório e registros; cancelamento finaliza o estado por token independente. Bootstrap administrativo incompleto é retomado enquanto faltar um dos diretórios. Contrato, limites e códigos estão em [importação](workforce-admin-integration.md); a versão funcional publicada e seus limites constam no [registro de 06/10](RELEASE-API-2026-10-06.md).
 
 ## Formas de consultar horas
 
@@ -71,8 +71,8 @@ Compose produção usa PostgreSQL interno, credenciais separadas owner/runtime, 
 
 Antes de nova entrega, conferir a base efetiva, requisito/contrato, estado local e mudanças concorrentes. Registrar homologação das fontes, versão implantada, execução de jobs, SMTP e aceite Windows com evidência própria. Calendário, workflow, exportações e política histórica continuam pendentes; [decisões](DECISOES-PENDENCIAS.md) orienta seu escopo. Coordenação e fila: [CEP-ORQUESTRADOR](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues).
 
-Decisão histórica de 05/10/2026: janela móvel inclusiva de 17 dias, hoje mais 16 anteriores no fuso São Paulo. O esclarecimento de 06/10/2026 abaixo substitui esse limite. O Front apresenta Atualizar sprint; a janela móvel não altera os períodos oficiais de análise. Full/bootstrap permanece em 90 dias. Sem alteração de schema ou contrato HTTP estrutural; produção depende de publicação.
+Decisão histórica de 05/10/2026: janela móvel inclusiva de 17 dias, hoje mais 16 anteriores no fuso São Paulo. O esclarecimento de 06/10/2026 abaixo substitui esse limite. O Front apresenta Atualizar sprint; a janela móvel não altera os períodos oficiais de análise. Full/bootstrap permanece em 90 dias. Não houve alteração de schema ou contrato HTTP estrutural.
 
-Correção solicitada em 06/10/2026 (Issue CEP-ORQUESTRADOR #30): a janela móvel normal passa a 20 dias inclusivos, hoje mais 19 anteriores, para Monday e VR Mais. A associação do próprio usuário é visível em pessoas/histórico mesmo sem vínculo vigente com time; colegas continuam sujeitos ao escopo de time atual. A sincronização pessoal já incluía o usuário e mantém esse escopo. Full/bootstrap permanece em 90 dias; sem alteração de schema ou forma dos DTOs. Publicação e homologação nas fontes não são presumidas.
+Correção solicitada em 06/10/2026 (Issue CEP-ORQUESTRADOR #30): a janela móvel normal passou a 20 dias inclusivos, hoje mais 19 anteriores, para Monday e VR Mais. A associação do próprio usuário é visível em pessoas/histórico mesmo sem vínculo vigente com time; colegas continuam sujeitos ao escopo de time atual. A sincronização pessoal já incluía o usuário e mantém esse escopo. Full/bootstrap permanece em 90 dias; sem alteração de schema ou forma dos DTOs. A publicação da API foi verificada separadamente; homologação das fontes e do acesso pessoal sem time em produção ainda exige evidência.
 
 Refatoração interna de 06/10/2026: projeções administrativas compartilhadas, análise atual injetada no processador, scheduler separado e arquivos próprios para outbox/dispatcher/worker. Contrato, autorização, motor, locks e migrations preservados. Evidências e limites em [auditoria interna](REFATORACAO-INTERNA-2026-10-06.md).
