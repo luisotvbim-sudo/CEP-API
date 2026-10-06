@@ -13,13 +13,13 @@ public sealed record AcceptInvitationRequest(
     [Required, EmailAddress, MaxLength(320)] string Email,
     [Required, MaxLength(50)] string Code,
     [Required, MaxLength(200)] string DisplayName,
-    [Required, MinLength(12), MaxLength(200)] string Password,
+    [Required, MinLength(6), MaxLength(200)] string Password,
     ClientInfo? Client);
 public sealed record ForgotPasswordRequest([Required, EmailAddress, MaxLength(320)] string Email);
 public sealed record ResetPasswordRequest([Required, EmailAddress, MaxLength(320)] string Email,
-    [Required, MaxLength(50)] string Code, [Required, MinLength(12), MaxLength(200)] string NewPassword);
+    [Required, MaxLength(50)] string Code, [Required, MinLength(6), MaxLength(200)] string NewPassword);
 public sealed record ChangePasswordRequest([Required, MaxLength(200)] string CurrentPassword,
-    [Required, MinLength(12), MaxLength(200)] string NewPassword);
+    [Required, MinLength(6), MaxLength(200)] string NewPassword);
 public sealed record UpdateProfileRequest([Required, MaxLength(200)] string DisplayName);
 public sealed record CreatePluginGrantRequest(Product Product, [Required, MaxLength(50)] string PluginVersion,
     [Required, MaxLength(200)] string InstallationId);

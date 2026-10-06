@@ -7,7 +7,7 @@ internal static class SecurityEmailTemplate
 {
     public static MimeEntity Invitation(EmailOptions options, string organizationName, string code, DateTimeOffset expiresAt)
         => Build("Ative sua conta CEP", $"Você foi convidado para {organizationName}.",
-            "Clique no botão para informar seu e-mail, nome e o código abaixo. Crie uma senha de pelo menos 12 caracteres.",
+            "Clique no botão para informar seu e-mail, nome e o código abaixo. Crie uma senha de pelo menos 6 caracteres.",
             "Código de ativação", code, expiresAt, "Ativar minha conta", options.InvitationActivationUrl,
             "O código não é sua senha. Depois de ativar, entre com seu e-mail e a senha criada. Se o convite expirar, peça um novo ao administrador.",
             "Se não esperava este convite, ignore esta mensagem.");

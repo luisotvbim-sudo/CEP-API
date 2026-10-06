@@ -1,5 +1,7 @@
 # Decisões e pendências — CEP-API
 
+Decisão do responsável em 05/10/2026: reduzir o mínimo de senha de 12 para 6 caracteres, conservando máximo de 200 e demais regras. Aplicável à ativação, recuperação e troca; requer alinhamento do Front e das mensagens de convite.
+
 Revisão: 04/10/2026, base de código `b36c6e149b42253b44860d98c6ffe44f98c53dd6`. Este registro distingue regras aprovadas, comportamento observado e lacunas. Não transforma implementação em aprovação de produto ou em comprovação operacional. IDs D-01 a D-13 permanecem na [especificação](conciliacao-horas/especificacao-funcional.md).
 
 ## Regras consolidadas
