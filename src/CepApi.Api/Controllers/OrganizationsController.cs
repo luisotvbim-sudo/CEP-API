@@ -121,9 +121,7 @@ public sealed partial class OrganizationsController(
     {
         (page, pageSize) = NormalizePage(page, pageSize);
         var query = db.Users.AsNoTracking().Include(x => x.ProductAccesses).Where(x => x.OrganizationId == organizationId);
-        var total = await query.LongCountAsync(cancellationToken);
-        var users = await query.OrderBy(x => x.DisplayName).ThenBy(x => x.Id).Page(page, pageSize).ToListAsync(cancellationToken);
-        return Ok(new PagedResponse<UserResponse>(users.Select(x => x.ToUserResponse()).ToArray(), page, pageSize, total));
+        return Ok(await query.ReadUserPageAsync(page, pageSize, cancellationToken));
     }
 
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.CultureInvariant)]

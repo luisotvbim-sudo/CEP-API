@@ -17,8 +17,6 @@ public sealed class SystemAuditController(AppDbContext db) : ApiControllerBase
     {
         var query = db.AuditEvents.AsNoTracking().AsQueryable();
         if (organizationId is not null) query = query.Where(x => x.OrganizationId == organizationId);
-        if (before is not null) query = query.Where(x => x.CreatedAt < before);
-        var events = await query.OrderByDescending(x => x.CreatedAt).Take(Math.Clamp(pageSize, 1, 200)).ToListAsync(cancellationToken);
-        return Ok(events.Select(x => x.ToAuditEventResponse()).ToArray());
+        return Ok(await query.ReadAuditEventsAsync(before, pageSize, cancellationToken));
     }
 }

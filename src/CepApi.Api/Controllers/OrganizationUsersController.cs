@@ -36,9 +36,7 @@ public sealed class OrganizationUsersController(
         if (role is not null) query = query.Where(x => x.Role == role);
         if (product is not null) query = query.Where(x => x.ProductAccesses.Any(access => access.Product == product));
 
-        var total = await query.LongCountAsync(cancellationToken);
-        var users = await query.OrderBy(x => x.DisplayName).ThenBy(x => x.Id).Page(page, pageSize).ToListAsync(cancellationToken);
-        return Ok(new PagedResponse<UserResponse>(users.Select(x => x.ToUserResponse()).ToArray(), page, pageSize, total));
+        return Ok(await query.ReadUserPageAsync(page, pageSize, cancellationToken));
     }
 
     [HttpPost("invitations")]
