@@ -2,7 +2,7 @@
 
 Decisão do responsável em 05/10/2026: reduzir o mínimo de senha de 12 para 6 caracteres, conservando máximo de 200 e demais regras. Aplicável à ativação, recuperação e troca; requer alinhamento do Front e das mensagens de convite.
 
-Revisão: 04/10/2026, base de código `b36c6e149b42253b44860d98c6ffe44f98c53dd6`. Este registro distingue regras aprovadas, comportamento observado e lacunas. Não transforma implementação em aprovação de produto ou em comprovação operacional. IDs D-01 a D-13 permanecem na [especificação](conciliacao-horas/especificacao-funcional.md).
+Revisão: 06/10/2026, base da correção de leitura VR `6da062756428255a3ed49c2903bc61ba5cf6476b`. Este registro distingue regras aprovadas, comportamento observado e lacunas. Não transforma implementação em aprovação de produto ou em comprovação operacional. IDs D-01 a D-13 permanecem na [especificação](conciliacao-horas/especificacao-funcional.md).
 
 ## Regras consolidadas
 
@@ -23,6 +23,7 @@ Fontes: [contrato aprovado](conciliacao-horas/contrato-analises-notificacoes.md)
 | Sobreposição Monday | `TimeAnalysisEngine` deduplica mesma chave e soma sessões distintas | Não prometer duração única de intervalos simultâneos ou ocorrência própria de sobreposição |
 | Agregados | Cada total exige todos os dias calculáveis daquele total | Lacuna mantém agregado nulo; não há subtotal certificado ou taxa de cobertura no DTO |
 | Histórico | `SummarizeImportedDay` não estende sessões e VR atual fica nulo | Snapshot importado não é decisão atual nem prova de cobertura |
+| VR no dia corrente | `reports/work_days` omitiu 06/10/2026 em leitura autorizada, enquanto `reports/time_cards` trouxe registros para a mesma identidade e data; o adaptador consulta este último quando falta a linha de hoje | Consulta vazia mantém nulo; não comprova ausência de batidas nem prazo de atualização do relatório de jornada |
 | Relatórios | GET analyses lista banco | Consultar não reavalia fontes nem resolve ocorrências |
 | Agendador | Recupera slots do mesmo dia, não dias anteriores nunca enfileirados | Interrupção do servidor pode deixar lacunas de execução; pendentes já geradas continuam recuperáveis |
 | Plugin grant | `installationId`/versão são validados/auditados; grant não inclui vínculo criptográfico ao dispositivo | Não prometer proteção por hardware ou revogação offline imediata |
@@ -34,7 +35,7 @@ Fontes: [contrato aprovado](conciliacao-horas/contrato-analises-notificacoes.md)
 | D-01 | Retroatividade/reprocessamento, vigência e classificações adicionais; snapshots não devem mudar silenciosamente |
 | D-02 | Homologar travessia de dia e casos reais; não criar jornada noturna por inferência |
 | D-03 | Política de sessões simultâneas, atividades compartilhadas e novas categorias/boards |
-| D-04 | Cobertura/campos/semântica das fontes reais; total oficial VR e atribuição Monday precisam de validação com dados autorizados |
+| D-04 | Cobertura/campos/semântica das fontes reais; confirmar com a VR o prazo e a completude dos relatórios de jornada e de registros no dia corrente. Total oficial VR e atribuição Monday ainda precisam de validação ampla com dados autorizados |
 | D-05 | Acesso após transferência, atribuição histórica por time e futura decisão/exportação de períodos anteriores |
 | D-06 | Prazo de lançamento, limite de atualidade e recuperação de execução perdida em outro dia |
 | D-07 | Casos/justificativas, mudança após fechamento, reabertura e competência mensal |
