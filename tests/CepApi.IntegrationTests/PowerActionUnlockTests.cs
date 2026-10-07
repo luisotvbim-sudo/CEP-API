@@ -139,6 +139,45 @@ public sealed class PowerActionUnlockTests(SecurityFixture fixture) : IClassFixt
     }
 
     [Fact]
+    public async Task Successful_attempts_hit_persisted_limit_without_changing_the_active_grant_across_hosts()
+    {
+        var pin = await ConfigurePin();
+        var user = await fixture.CreateUserAsync();
+        var clock = new MutableClock();
+        await using var first = Factory(clock);
+        using var client = await Client(first, user);
+        PowerActionUnlockResponse? last = null;
+        for (var i = 0; i < 5; i++)
+        {
+            var reply = await client.PostAsJsonAsync(UnlockRoute, new { pin }, Ct);
+            Assert.Equal(HttpStatusCode.OK, reply.StatusCode);
+            last = (await reply.Content.ReadFromJsonAsync<PowerActionUnlockResponse>(SecurityFixture.Json, Ct))!;
+            clock.UtcNow = clock.UtcNow.AddSeconds(1);
+        }
+
+        await using var second = Factory(clock);
+        using var fresh = await Client(second, user);
+        await AdministrationRegressionTests.AssertProblemAsync(await fresh.PostAsJsonAsync(UnlockRoute, new { pin }, Ct),
+            HttpStatusCode.TooManyRequests, "power_unlock_rate_limited");
+        foreach (var host in new[] { client, fresh })
+        {
+            var decision = await Check(host, "restart");
+            Assert.True(decision.Override);
+            Assert.Equal(last!.UnlockedUntil, decision.UnlockedUntil);
+        }
+
+        await using var scope = second.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var grant = await db.Set<PowerActionOverride>().SingleAsync(x => x.UserId == user.Id, Ct);
+        Assert.Equal(last!.ServerTime, grant.GrantedAt);
+        Assert.Equal(last.UnlockedUntil, grant.ExpiresAt);
+        Assert.Equal(user.OrganizationId, grant.OrganizationId);
+        Assert.Equal(5, await db.AuditEvents.CountAsync(x => x.ActorUserId == user.Id && x.Action == "power.override_granted", Ct));
+        Assert.Equal(1, await db.AuditEvents.CountAsync(x => x.ActorUserId == user.Id && x.Action == "power.override_rate_limited", Ct));
+        Assert.False(await db.AuditEvents.AnyAsync(x => x.ActorUserId == user.Id && x.Action == "power.override_denied", Ct));
+    }
+
+    [Fact]
     public async Task Http_rate_limit_and_missing_configuration_are_explicit()
     {
         await ConfigurePin();
