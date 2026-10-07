@@ -25,6 +25,8 @@ Os conectores executam independentemente: o diretório e os registros de uma fon
 
 Cancelamento/desconexão encerra as fontes ainda em andamento com `sync_cancelled`, usando uma janela independente de até 15 segundos para persistir o estado e liberar nova tentativa. Resultados já gravados permanecem. Se o processo morrer ou o banco impedir a finalização, a recuperação histórica de tentativas com mais de duas horas permanece necessária ao tentar novamente. Isso não transforma o POST em job durável nem elimina limites do proxy.
 
+O template Nginx reserva 180 segundos de espera para `/api/v1/organization/time-control/synchronizations` no domínio direto da API, incluindo os parâmetros `full` e `organizationId`. Isso alinha a rota usada pelo desktop ao proxy do portal; as demais rotas do domínio da API conservam 30 segundos. O prazo de coleta por fonte continua limitado a 120 segundos. Publicar somente a imagem da API não comprova aplicação do template: é necessário atualizar/recarregar o Nginx e conferir a configuração efetiva. Outros proxies e versões instaladas dos clientes podem impor limites menores. A correção evita o corte de 30 segundos nessa borda, mas não garante sucesso do Monday nem substitui um job durável.
+
 Na carga inicial administrativa, ter somente o diretório Monday não conclui o bootstrap: enquanto faltar o diretório de uma fonte, uma nova solicitação administrativa normal recarrega os diretórios e a janela inicial de 90 dias. O escopo de Membro/Líder permanece limitado às associações autorizadas.
 
 A resposta contém um resultado geral e um resultado independente para `monday` e `vrMais`:
