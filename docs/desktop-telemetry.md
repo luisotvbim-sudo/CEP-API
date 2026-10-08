@@ -36,6 +36,8 @@ Resposta HTTP 200: `{ "acceptedEventIds": [ ... ], "rejectedEventIds": [ ... ] }
 
 Todos os eventos são **relatos do cliente**, sem valor autorizativo. `power_schedule_confirmed` significa apenas que o host observou confirmação de agendamento; não prova desligamento efetivo. A API continua decidindo a liberação, WPF revalida e o serviço Windows executa. A trilha local do serviço e eventos do Windows continuam necessários para investigar o resultado final.
 
+`power_recovery_required` pode ter `errorCode=none` para pendência persistida ou um código fechado de falha de comunicação/serviço quando a reconciliação não conseguiu consultar o serviço.
+
 ## Leitura, isolamento e retenção
 
 `GET /api/v1/organization/desktop-telemetry/events` exige `OrganizationAdmin` ou `SystemAdmin` com organização selecionada para este último. A consulta filtra obrigatoriamente a organização autorizada, retorna 1–100 itens e aceita filtro `installationId`. A resposta inclui `userId` para distinguir titulares da própria organização, sem nome/e-mail. Paginação usa `before` (UTC), `beforeEventId` e `beforeUserId` juntos: o próximo pedido informa `receivedAt`, `eventId` e `userId` do último item da página. Cada leitura válida gera auditoria mínima `desktop_telemetry.read`, com ator, organização e contagem, sem copiar conteúdo dos eventos. Não existe leitura cruzada entre organizações.

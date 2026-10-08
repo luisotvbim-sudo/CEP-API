@@ -116,6 +116,24 @@ public sealed class DesktopTelemetryTests(SecurityFixture fixture) : IClassFixtu
         Assert.Equal(HttpStatusCode.Forbidden, (await memberClient.GetAsync(path, Ct)).StatusCode);
     }
 
+    [Fact]
+    public async Task Recovery_required_accepts_a_classified_service_error_without_free_text()
+    {
+        var owner = await fixture.CreateUserAsync();
+        var item = Event() with
+        {
+            Code = "power_recovery_required", Phase = "reconcile", Outcome = "uncertain",
+            Action = "shutdown", OperationId = Guid.NewGuid(), ErrorCode = "service_unavailable"
+        };
+        using var client = await Client(owner);
+        var reply = await client.PostAsJsonAsync(Route,
+            new DesktopTelemetryBatchRequest { Events = [item] }, Ct);
+        Assert.Equal(HttpStatusCode.OK, reply.StatusCode);
+        var ack = (await reply.Content.ReadFromJsonAsync<DesktopTelemetryBatchResponse>(SecurityFixture.Json, Ct))!;
+        Assert.Equal([item.EventId], ack.AcceptedEventIds);
+        Assert.Empty(ack.RejectedEventIds);
+    }
+
     private async Task<HttpClient> Client(ApplicationUser user)
     {
         var client = fixture.Client();

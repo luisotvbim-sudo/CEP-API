@@ -114,6 +114,8 @@ public sealed partial class DesktopTelemetryController(AppDbContext db, IClock c
             _ => false
         };
         if (!valid) return false;
+        // Reconciliation can be required by a persisted pending request (none) or a classified IPC failure.
+        if (item.Code == "power_recovery_required") return true;
         var expectsError = item.Code is "desktop_start_failed" or "power_check_failed" or "power_schedule_failed"
             or "power_cancel_failed" or "update_check_failed" or "update_install_failed";
         return (item.ErrorCode != "none") == expectsError;
