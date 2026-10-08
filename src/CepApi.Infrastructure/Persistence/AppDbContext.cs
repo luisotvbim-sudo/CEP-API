@@ -15,6 +15,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<DesktopTelemetryEvent> DesktopTelemetryEvents => Set<DesktopTelemetryEvent>();
     public DbSet<EmailOutboxMessage> EmailOutbox => Set<EmailOutboxMessage>();
     public DbSet<AllowedEmailDomain> AllowedEmailDomains => Set<AllowedEmailDomain>();
     public DbSet<WorkforceTeam> WorkforceTeams => Set<WorkforceTeam>();
@@ -30,6 +31,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         base.OnModelCreating(builder);
         TimeNotificationModel.Configure(builder);
         PowerActionModel.Configure(builder);
+        DesktopTelemetryModel.Configure(builder);
 
         IdentityModel.Configure(builder);
         OrganizationAccessModel.Configure(builder);

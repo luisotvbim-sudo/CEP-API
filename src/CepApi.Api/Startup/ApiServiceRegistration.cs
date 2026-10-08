@@ -21,6 +21,7 @@ internal static class ApiServiceRegistration
         builder.Services.AddScoped<RefreshTokenSessionService>();
         builder.Services.AddScoped<InvitationService>();
         builder.Services.AddScoped<WebSessionCookie>();
+        builder.Services.AddHostedService<DesktopTelemetryRetentionService>();
         builder.Services.AddScoped<OrganizationScopeService>();
         builder.Services.AddScoped<TimeControlAccessService>();
         builder.Services.AddControllers().AddJsonOptions(options =>

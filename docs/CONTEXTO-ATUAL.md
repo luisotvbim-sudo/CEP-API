@@ -67,6 +67,8 @@ PIN dedicado global de seis dígitos abre janela individual exata de cinco minut
 
 ## Operação e trabalho seguinte
 
+Trabalho em branch de 08/10/2026, ainda não implantado: [telemetria estruturada do desktop](desktop-telemetry.md), com migration aditiva, ingestão autenticada, leitura por organização, retenção configurável e testes PostgreSQL. Esses registros são observações do cliente; não substituem decisão de energia da API nem prova de desligamento pelo Windows. Coordenação: Issues #45/#47 no CEP-ORQUESTRADOR e entrega nativa #48.
+
 Compose produção usa PostgreSQL interno, credenciais separadas owner/runtime, API sem root com filesystem readonly, Data Protection persistente e Nginx de borda. Front e API compartilham rede de borda; navegador utiliza proxy de mesma origem. Nightly API é configurado para 02h São Paulo: CI do SHA exato, build, backup, migration e health; rollback de imagem não desfaz schema. Monitor local não envia alertas externos nem reinicia serviços. Scripts presentes não comprovam instalação, timer ativo ou backup externo.
 
 Antes de nova entrega, conferir a base efetiva, requisito/contrato, estado local e mudanças concorrentes. Registrar homologação das fontes, versão implantada, execução de jobs, SMTP e aceite Windows com evidência própria. Calendário, workflow, exportações e política histórica continuam pendentes; [decisões](DECISOES-PENDENCIAS.md) orienta seu escopo. Coordenação e fila: [CEP-ORQUESTRADOR](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues).

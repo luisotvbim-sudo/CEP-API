@@ -14,6 +14,7 @@ A consulta de [acompanhamento pessoal](docs/personal-overview.md) retorna perío
 - [Associação/importação](docs/workforce-admin-integration.md) por IDs Monday/VR; atualização normal de 20 dias inclusivos e inicial/full administrativa de 90 dias. Fontes falham independentemente.
 - [Histórico diário](docs/workforce-daily-history.md) importado e [motor/relatórios/notificações](docs/time-notifications.md) com corte único São Paulo, tolerância global inicial de 30 minutos e valores desconhecidos nulos. GET análises lê snapshots; não atualiza fontes.
 - [Energia](docs/power-action-check.md) decidida pela API; [PIN dedicado](docs/power-admin-unlock.md) abre liberação individual de cinco minutos. A execução Windows pertence ao CEP-FRONT.
+- [Telemetria desktop proposta](docs/desktop-telemetry.md): eventos estruturados reportados pelo cliente; implantação e ativação dependem de validação separada.
 - [Grants dos plugins](docs/plugin-integration.md) de no máximo 72 horas; existência deste contrato não comprova consumo pelos plugins reais.
 
 Calendário completo, workflow de justificativas/casos, ranking avançado e exportações não são capacidades completas atuais. Código, GitHub e versão implantada devem ser conferidos separadamente.

@@ -6,6 +6,10 @@ internal static class ProductionConfigurationValidator
 {
     public static void Validate(WebApplicationBuilder builder)
     {
+        var retentionDays = builder.Configuration.GetValue("DesktopTelemetry:RetentionDays", 30);
+        var batchLimit = builder.Configuration.GetValue("RateLimiting:DesktopTelemetryPerMinute", 6);
+        if (retentionDays is < 7 or > 365 || batchLimit is < 1 or > 120)
+            throw new InvalidOperationException("Configure bounded desktop telemetry retention and rate limits.");
         if (!builder.Environment.IsProduction()) return;
 
         var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>();
