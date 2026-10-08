@@ -22,6 +22,7 @@ Entrada para retomada em qualquer computador. A base funcional da API publicada 
 | Convites | [Ativação](invitation-activation.md), [convite com download MSI](convite-download-msi.md) e [reenvio](people-invitation-resend.md) |
 | Fontes/pessoas | [Importação e associação Monday/VR](workforce-admin-integration.md) |
 | Histórico | [Resumo diário importado](workforce-daily-history.md) |
+| Telemetria desktop | [Eventos estruturados, escopo, retenção e migration](desktop-telemetry.md) |
 | Acompanhamento pessoal | [Consulta atual, situação, períodos e qualidade](personal-overview.md) |
 | Análises/avisos | [Regras aprovadas](conciliacao-horas/contrato-analises-notificacoes.md) e [rotas/processamento](time-notifications.md) |
 | Energia | [Decisão ao vivo](power-action-check.md) e [PIN temporário](power-admin-unlock.md) |
