@@ -58,3 +58,9 @@ Não usar `-T`, pipe, argumento, variável de ambiente ou arquivo contendo o PIN
 Antes do provisionamento, desbloqueio retorna 503; verificações normais continuam funcionando. O valor real é introduzido pelo operador no terminal seguro, sem ferramentas que registrem os caracteres digitados. A existência do comando não comprova provisionamento na VM.
 
 Schemas completos: `docs/openapi-current.json`, exportado da aplicação. Migration: `PowerActionOverrides`, compatível com a versão anterior e com privilégios explícitos para o papel runtime.
+
+## Regressão do limite persistido — Issue #35
+
+Na base `c1db340d44eb964a9ff4cd49063ac9b57eb0b4af`, a investigação não confirmou defeito no serviço. A regressão `Successful_attempts_hit_persisted_limit_without_changing_the_active_grant_across_hosts` verifica cinco PINs válidos com relógio controlado, sexto pedido recusado com `power_unlock_rate_limited` em outro host e preservação do prazo/grant nos dois hosts. Também confere cinco auditorias de concessão, uma de limite e nenhuma de PIN inválido. O limite HTTP é elevado somente na fixture para isolar o limite persistido.
+
+Em 06/10/2026, build da solução passou sem avisos/erros, 136 unidades passaram e a nova regressão passou com PostgreSQL 17 real via Testcontainers. A seleção relacionada de `PowerActionUnlockTests`, `WebSessionTests` e refresh concorrente/replay também passou: 15 testes, sem falhas/ignorados. Essa evidência local não comprova pacote Windows distribuído ou produção. A entrega acrescenta teste; serviço, política, duração, schema e contrato HTTP permanecem iguais.
