@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using CepApi.Application;
 using CepApi.Domain;
@@ -9,35 +10,49 @@ public sealed class FreshTimeAnalysisService(IClock clock, IEnumerable<IExternal
 {
     public async Task<(Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot> Snapshots,
         List<TimeAnalysisSourceResponse> States)> FetchAsync(
-        IReadOnlyCollection<WorkforcePerson> people, AnalysisWindow window, CancellationToken cancellationToken)
+        IReadOnlyCollection<WorkforcePerson> people, AnalysisWindow window, CancellationToken cancellationToken,
+        Action<ExternalWorkforceSource, long, string>? observeSource = null)
     {
         var snapshots = new Dictionary<ExternalWorkforceSource, ExternalWorkforceTimeSnapshot>();
         var sourceStates = new List<TimeAnalysisSourceResponse>();
         foreach (var source in sources)
         {
-            var ids = people.Select(p => source.Source == ExternalWorkforceSource.Monday ? p.MondayIdentity : p.VrMaisIdentity)
-                .Where(x => x.IsActive).Select(x => x.ExternalId).Distinct().ToArray();
-            if (ids.Length == 0)
-            {
-                sourceStates.Add(new(source.Source, "incomplete", "source_scope_empty", clock.UtcNow));
-                continue;
-            }
+            var started = Stopwatch.GetTimestamp();
+            var outcome = "failed";
             try
             {
-                var snapshot = source is IExternalWorkforceOverlapTimeSource overlap
-                    ? await overlap.FetchIncludingOverlapAsync(window.From, window.To, ids, cancellationToken)
-                    : await source.FetchAsync(window.From, window.To, ids, cancellationToken);
-                snapshots[source.Source] = snapshot;
-                sourceStates.Add(new(source.Source, snapshot.Complete && snapshot.From <= window.From && snapshot.To >= window.To ? "complete" : "incomplete", null, clock.UtcNow));
+                var ids = people.Select(p => source.Source == ExternalWorkforceSource.Monday ? p.MondayIdentity : p.VrMaisIdentity)
+                    .Where(x => x.IsActive).Select(x => x.ExternalId).Distinct().ToArray();
+                if (ids.Length == 0)
+                {
+                    sourceStates.Add(new(source.Source, "incomplete", "source_scope_empty", clock.UtcNow));
+                    outcome = "scope_empty";
+                    continue;
+                }
+                try
+                {
+                    var snapshot = source is IExternalWorkforceOverlapTimeSource overlap
+                        ? await overlap.FetchIncludingOverlapAsync(window.From, window.To, ids, cancellationToken)
+                        : await source.FetchAsync(window.From, window.To, ids, cancellationToken);
+                    snapshots[source.Source] = snapshot;
+                    outcome = snapshot.Complete && snapshot.From <= window.From && snapshot.To >= window.To ? "complete" : "incomplete";
+                    sourceStates.Add(new(source.Source, outcome, null, clock.UtcNow));
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    outcome = "cancelled";
+                    throw;
+                }
+                catch (Exception exception) when (exception is ExternalDirectoryException or HttpRequestException or TaskCanceledException or JsonException)
+                {
+                    var errorCode = exception is ExternalDirectoryException external ? external.Code : "source_unavailable";
+                    sourceStates.Add(new(source.Source, "incomplete", errorCode, clock.UtcNow));
+                    outcome = "source_unavailable";
+                }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            finally
             {
-                throw;
-            }
-            catch (Exception exception) when (exception is ExternalDirectoryException or HttpRequestException or TaskCanceledException or JsonException)
-            {
-                var errorCode = exception is ExternalDirectoryException external ? external.Code : "source_unavailable";
-                sourceStates.Add(new(source.Source, "incomplete", errorCode, clock.UtcNow));
+                observeSource?.Invoke(source.Source, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, outcome);
             }
         }
         foreach (var source in Enum.GetValues<ExternalWorkforceSource>())

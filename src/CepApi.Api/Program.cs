@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CepApi.Api;
 using CepApi.Api.Startup;
 using CepApi.Infrastructure;
@@ -19,6 +20,24 @@ ProductionConfigurationValidator.Validate(builder);
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+var overviewHttpLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("PersonalOverviewHttp");
+app.Use(async (context, next) =>
+{
+    if (!context.Request.Path.Equals("/api/v1/me/time-control/overview", StringComparison.OrdinalIgnoreCase))
+    {
+        await next();
+        return;
+    }
+    var started = Stopwatch.GetTimestamp();
+    try { await next(); }
+    finally
+    {
+        overviewHttpLogger.LogInformation(
+            "Personal overview HTTP TraceId={TraceId} StatusCode={StatusCode} TotalMs={TotalMs}",
+            Activity.Current?.TraceId.ToString(), context.Response.StatusCode,
+            (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+    }
+});
 app.UseExceptionHandler();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseStatusCodePages(async statusContext =>
