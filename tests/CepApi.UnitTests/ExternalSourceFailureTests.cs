@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using CepApi.Application;
 using CepApi.Infrastructure.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace CepApi.UnitTests;
@@ -50,6 +52,138 @@ public sealed class ExternalSourceFailureTests
         using var client = new HttpClient(new Handler((_, _) => throw new TaskCanceledException("timeout")));
         var exception = await Assert.ThrowsAsync<ExternalDirectoryException>(() => Directory(monday, client).FetchAsync(Ct));
         Assert.Equal(code, exception.Code);
+    }
+
+    [Theory]
+    [InlineData("""{"errors":[{"message":"private@example.test","extensions":{"code":"REQUEST_MAX_COMPLEXITY_EXCEEDED","retry_in_seconds":12}}],"data":{"users":[]}}""", "graphql_errors", "REQUEST_MAX_COMPLEXITY_EXCEEDED", 1, 12)]
+    [InlineData("""{"errors":[{"message":"private@example.test","extensions":{"code":"private-token<script>","retry_in_seconds":99999}}],"data":{"users":[]}}""", "graphql_errors", "other", 1, 3600)]
+    [InlineData("""{"private":"private@example.test"}""", "missing_data", "none", 0, null)]
+    [InlineData("""{"errors":{"message":"private@example.test"},"data":{"users":[]}}""", "invalid_errors", "none", 0, null)]
+    [InlineData("""{"errors":null,"data":{"users":[]}}""", "invalid_errors", "none", 0, null)]
+    public async Task Monday_graphql_failures_log_only_allowlisted_diagnostics(
+        string response, string failure, string safeCode, int errorCount, int? retryAfterSeconds)
+    {
+        var logger = new RecordingLogger();
+        using var client = new HttpClient(new Handler((_, _) => Task.FromResult(Json(response))));
+        var source = new MondayDirectorySource(client, Options.Create(Settings()), logger);
+
+        var exception = await Assert.ThrowsAsync<ExternalDirectoryException>(() => source.FetchAsync(Ct));
+
+        Assert.Equal("monday_query_failed", exception.Code);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Equal("users", entry.Fields["Operation"]);
+        Assert.Equal(1, entry.Fields["Page"]);
+        Assert.Equal(200, entry.Fields["HttpStatus"]);
+        Assert.Equal(failure, entry.Fields["Failure"]);
+        Assert.Equal(safeCode, entry.Fields["ErrorCodes"]);
+        Assert.Equal(errorCount, entry.Fields["ErrorCount"]);
+        Assert.Equal(retryAfterSeconds, entry.Fields["RetryAfterSeconds"]);
+        Assert.DoesNotContain("private", entry.Rendered, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<script>", entry.Rendered, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("test-token", entry.Rendered, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Monday_time_page_failure_logs_operation_and_page_without_cursor()
+    {
+        var logger = new RecordingLogger();
+        using var client = new HttpClient(new Handler(async (request, token) =>
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            var query = body.RootElement.GetProperty("query").GetString()!;
+            if (query.Contains("hierarchy_type", StringComparison.Ordinal))
+                return Json("""{"data":{"boards":[{"id":"1","hierarchy_type":"multi_level","columns":[{"id":"people","title":"Profissional","type":"people"}]}]}}""");
+            if (query.Contains("next_items_page", StringComparison.Ordinal))
+            {
+                var reply = Json("""{"errors":[{"message":"private@example.test","extensions":{"code":"InvalidArgumentException","retry_in_seconds":5}}]}""");
+                reply.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(17));
+                return reply;
+            }
+            return Json("""{"data":{"boards":[{"id":"1","items_page":{"cursor":"private-cursor","items":[]}}]}}""");
+        }));
+        var source = new MondayDirectorySource(client, Options.Create(Settings()), logger);
+
+        var exception = await Assert.ThrowsAsync<ExternalDirectoryException>(() =>
+            ((IExternalWorkforceTimeSource)source).FetchAsync(new(2026, 9, 1), new(2026, 9, 2), ["42"], Ct));
+
+        Assert.Equal("monday_query_failed", exception.Code);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal("time_items_main", entry.Fields["Operation"]);
+        Assert.Equal(2, entry.Fields["Page"]);
+        Assert.Equal("InvalidArgumentException", entry.Fields["ErrorCodes"]);
+        Assert.Equal(17, entry.Fields["RetryAfterSeconds"]);
+        Assert.DoesNotContain("private-cursor", entry.Rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("private@example.test", entry.Rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Monday_subitem_failure_uses_static_operation_without_board_ids()
+    {
+        const string mainId = "private-main-board";
+        const string subitemId = "private-subitem-board";
+        var settings = Settings();
+        settings.Monday.BoardId = mainId;
+        var logger = new RecordingLogger();
+        using var client = new HttpClient(new Handler(async (request, token) =>
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            var query = body.RootElement.GetProperty("query").GetString()!;
+            var requestedBoard = body.RootElement.GetProperty("variables").GetProperty("ids")[0].GetString();
+            if (query.Contains("hierarchy_type", StringComparison.Ordinal))
+                return requestedBoard == mainId
+                    ? Json("""{"data":{"boards":[{"id":"private-main-board","hierarchy_type":"classic","columns":[{"id":"people","title":"Profissional","type":"people"},{"id":"subtasks","title":"Subitems","type":"subtasks","settings":{"boardIds":["private-subitem-board"]}}]}]}}""")
+                    : Json("""{"data":{"boards":[{"id":"private-subitem-board","hierarchy_type":"classic","columns":[{"id":"sub-people","title":"Profissional","type":"people"}]}]}}""");
+            return requestedBoard == mainId
+                ? Json("""{"data":{"boards":[{"id":"private-main-board","items_page":{"cursor":null,"items":[]}}]}}""")
+                : Json("""{"errors":[{"extensions":{"code":"InvalidColumnIdException"},"message":"private@example.test"}]}""");
+        }));
+        var source = new MondayDirectorySource(client, Options.Create(settings), logger);
+
+        var exception = await Assert.ThrowsAsync<ExternalDirectoryException>(() =>
+            ((IExternalWorkforceTimeSource)source).FetchAsync(new(2026, 9, 1), new(2026, 9, 2), ["42"], Ct));
+
+        Assert.Equal("monday_query_failed", exception.Code);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal("time_items_subitems", entry.Fields["Operation"]);
+        Assert.Equal(1, entry.Fields["Page"]);
+        Assert.Equal("InvalidColumnIdException", entry.Fields["ErrorCodes"]);
+        Assert.DoesNotContain(mainId, entry.Rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain(subitemId, entry.Rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("private@example.test", entry.Rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Monday_directory_subitem_failure_uses_static_operation()
+    {
+        var settings = Settings();
+        settings.Monday.BoardId = "private-main-board";
+        var logger = new RecordingLogger();
+        using var client = new HttpClient(new Handler(async (request, token) =>
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            var query = body.RootElement.GetProperty("query").GetString()!;
+            if (query.Contains("users(status", StringComparison.Ordinal))
+                return Json("""{"data":{"users":[{"id":"42","name":"Tester"}]}}""");
+            var requestedBoard = body.RootElement.GetProperty("variables").GetProperty("ids")[0].GetString();
+            if (query.Contains("hierarchy_type", StringComparison.Ordinal))
+                return requestedBoard == settings.Monday.BoardId
+                    ? Json("""{"data":{"boards":[{"id":"private-main-board","hierarchy_type":"classic","columns":[{"id":"people","title":"Profissional","type":"people"},{"id":"subtasks","title":"Subitems","type":"subtasks","settings":{"boardIds":["private-subitem-board"]}}]}]}}""")
+                    : Json("""{"data":{"boards":[{"id":"private-subitem-board","hierarchy_type":"classic","columns":[{"id":"sub-people","title":"Profissional","type":"people"}]}]}}""");
+            return requestedBoard == settings.Monday.BoardId
+                ? Json("""{"data":{"boards":[{"id":"private-main-board","items_page":{"cursor":null,"items":[]}}]}}""")
+                : Json("""{"errors":[{"extensions":{"code":"InvalidColumnIdException"}}]}""");
+        }));
+        var source = new MondayDirectorySource(client, Options.Create(settings), logger);
+
+        var exception = await Assert.ThrowsAsync<ExternalDirectoryException>(() => source.FetchAsync(Ct));
+
+        Assert.Equal("monday_query_failed", exception.Code);
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal("directory_items_subitems", entry.Fields["Operation"]);
+        Assert.Equal(1, entry.Fields["Page"]);
+        Assert.DoesNotContain("private-main-board", entry.Rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-subitem-board", entry.Rendered, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -168,5 +302,23 @@ public sealed class ExternalSourceFailureTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => send(request, cancellationToken);
+    }
+
+    private sealed class RecordingLogger : ILogger<MondayDirectorySource>
+    {
+        public List<(LogLevel Level, string Rendered, IReadOnlyDictionary<string, object?> Fields)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var fields = state is IEnumerable<KeyValuePair<string, object?>> values
+                ? values.ToDictionary(x => x.Key, x => x.Value)
+                : new Dictionary<string, object?>();
+            Entries.Add((logLevel, formatter(state, exception), fields));
+        }
     }
 }
