@@ -10,3 +10,5 @@ public sealed record HoursTeamResponse(Guid Id, string Name, HoursTotals Totals,
 public sealed record HoursSummaryResponse(DateOnly From, DateOnly To, DateTimeOffset GeneratedAt,
     int ToleranceMinutes, HoursTotals Organization, IReadOnlyList<HoursPersonResponse> People,
     IReadOnlyList<HoursTeamResponse> Teams);
+public sealed record HoursTeamSummaryResponse(DateOnly From, DateOnly To, DateTimeOffset GeneratedAt,
+    int ToleranceMinutes, HoursTeamResponse Team, IReadOnlyList<HoursPersonResponse> People);

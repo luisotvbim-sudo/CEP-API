@@ -10,11 +10,44 @@ public sealed class HoursSummaryService(AppDbContext db)
 {
     public async Task<HoursSummaryResponse> ReadAsync(Guid organizationId, DateOnly from, DateOnly to,
         DateTimeOffset now, CancellationToken cancellationToken)
+        => (await ReadCoreAsync(organizationId, from, to, now, null, null, cancellationToken))!;
+
+    public async Task<HoursTeamSummaryResponse?> ReadTeamAsync(Guid organizationId, Guid teamId, Guid? managerId,
+        DateOnly from, DateOnly to, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var result = await ReadCoreAsync(organizationId, from, to, now, teamId, managerId, cancellationToken);
+        if (result is null) return null;
+        var team = result.Teams.Single();
+        var members = team.Members.ToDictionary(x => x.PersonId);
+        var people = result.People.Select(person =>
+        {
+            var member = members[person.Id];
+            return person with { Totals = member.Totals, Days = person.Days.Where(day => member.Days.Contains(day.Day)).ToArray() };
+        }).ToArray();
+        return new(from, to, now, result.ToleranceMinutes, team, people);
+    }
+
+    private async Task<HoursSummaryResponse?> ReadCoreAsync(Guid organizationId, DateOnly from, DateOnly to,
+        DateTimeOffset now, Guid? teamId, Guid? managerId, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
         var today = TimeAnalysisEngine.LocalDate(now);
+        var activeTeams = db.WorkforceTeams.AsNoTracking().Where(x => x.OrganizationId == organizationId && x.IsActive);
+        if (teamId is { } selected)
+            activeTeams = activeTeams.Where(x => x.Id == selected);
+        if (managerId is { } manager)
+            activeTeams = activeTeams.Where(team => team.Assignments.Any(x => x.UserId == manager &&
+                x.Role == TeamAssignmentRole.Manager && x.EffectiveFrom <= today &&
+                (x.EffectiveTo == null || x.EffectiveTo >= today)));
+        var teams = await activeTeams.OrderBy(x => x.Name).ThenBy(x => x.Id)
+            .Select(x => new { x.Id, x.Name }).ToListAsync(cancellationToken);
+        if (teamId.HasValue && teams.Count == 0) return null;
         var tolerance = await db.Set<TimeControlSettings>().Select(x => x.ToleranceMinutes).SingleAsync(cancellationToken);
         var scope = db.WorkforcePeople.AsNoTracking().Where(x => x.OrganizationId == organizationId);
+        if (teamId is { } scopeTeamId)
+            scope = scope.Where(p => p.UserId != null && db.TeamAssignments.Any(x =>
+                x.TeamId == scopeTeamId && x.UserId == p.UserId && x.EffectiveFrom <= today &&
+                (x.EffectiveTo == null || x.EffectiveTo >= today)));
         var people = await scope.OrderBy(x => x.DisplayName).ThenBy(x => x.Id)
             .Select(x => new { x.Id, x.UserId, x.DisplayName, x.MondayIdentityId, x.VrMaisIdentityId })
             .ToListAsync(cancellationToken);
@@ -22,9 +55,6 @@ public sealed class HoursSummaryService(AppDbContext db)
             .Where(x => x.OrganizationId == organizationId && x.WorkDate >= from && x.WorkDate <= to && !x.IsRemoved &&
                 scope.Any(p => p.MondayIdentityId == x.ExternalIdentityId || p.VrMaisIdentityId == x.ExternalIdentityId))
             .ToListAsync(cancellationToken);
-        var activeTeams = db.WorkforceTeams.AsNoTracking().Where(x => x.OrganizationId == organizationId && x.IsActive);
-        var teams = await activeTeams.OrderBy(x => x.Name).ThenBy(x => x.Id)
-            .Select(x => new { x.Id, x.Name }).ToListAsync(cancellationToken);
         var assignments = await db.TeamAssignments.AsNoTracking()
             .Where(x => activeTeams.Any(t => t.Id == x.TeamId) &&
                 x.EffectiveFrom <= today && (x.EffectiveTo == null || x.EffectiveTo >= from))

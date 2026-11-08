@@ -12,7 +12,7 @@ public sealed class HoursSummarySchemaFilter : ISchemaFilter
         var type = context.Type;
         if (type != typeof(HoursSummaryResponse) && type != typeof(HoursPersonResponse) &&
             type != typeof(HoursTeamMemberResponse) && type != typeof(HoursTeamResponse) &&
-            type != typeof(HoursTotals)) return;
+            type != typeof(HoursTotals) && type != typeof(HoursTeamSummaryResponse)) return;
         if (input is not OpenApiSchema schema || schema.Properties is null) return;
         schema.Required = schema.Properties.Keys.ToHashSet();
         foreach (var property in schema.Properties.Values.OfType<OpenApiSchema>())

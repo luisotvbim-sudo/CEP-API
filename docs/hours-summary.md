@@ -7,3 +7,5 @@ O resultado inclui pessoa-dias, totais conhecidos por fonte, quantidades dispon�
 Por time ativo, entram as pessoas com vínculo vigente hoje e, para cada pessoa, apenas os dias do intervalo que coincidem com seus vínculos nesse time. Sobreposições de papéis no mesmo time não duplicam dias. Times podem compartilhar pessoas. A resposta discrimina os dias incluídos no subtotal de cada membro. O histórico individual preserva o intervalo inteiro.
 
 Contrato aditivo, sem migration ou alteração de escopo em endpoints existentes. A exportação web usa essa resposta, sem recálculo ou nova leitura. Coordenação: [Issue #62](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues/62).
+
+GET `/api/v1/organization/time-control/teams/{teamId}/hours-summary` aplica o mesmo período e cálculo ao time ativo solicitado. Permite consulta ao líder com vínculo vigente no time e à coordenação da mesma organização. Líder sem vínculo de gestão vigente recebe 404. A resposta contém o time e apenas as pessoas e os dias considerados no total desse time.

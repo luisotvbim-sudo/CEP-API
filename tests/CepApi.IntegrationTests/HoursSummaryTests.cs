@@ -102,5 +102,20 @@ public sealed class HoursSummaryTests(SecurityFixture fixture) : IClassFixture<S
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(route + "&organizationId=" + outsider.OrganizationId, ct)).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync(
             $"/api/v1/organization/time-control/hours-summary?from={today.AddDays(-90):yyyy-MM-dd}&to={today:yyyy-MM-dd}", ct)).StatusCode);
+
+        string TeamRoute(Guid id) =>
+            $"/api/v1/organization/time-control/teams/{id}/hours-summary?from={first:yyyy-MM-dd}&to={second:yyyy-MM-dd}";
+        tokens = await fixture.LoginAsync(client, member.Email!);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", tokens.AccessToken);
+        var teamResult = (await client.GetFromJsonAsync<HoursTeamSummaryResponse>(TeamRoute(teamId), SecurityFixture.Json, ct))!;
+        Assert.Equal(teamId, teamResult.Team.Id);
+        var teamPerson = Assert.Single(teamResult.People);
+        Assert.Equal(personId, teamPerson.Id);
+        Assert.Equal(second, Assert.Single(teamPerson.Days).Day);
+        Assert.Equal(6 * 3600, teamPerson.Totals.MondaySeconds);
+        var otherTeamId = result.Teams.Single(x => x.Name == "Also").Id;
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync(TeamRoute(otherTeamId), ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(TeamRoute(teamId) + "&organizationId=" + outsider.OrganizationId, ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(route, ct)).StatusCode);
     }
 }
