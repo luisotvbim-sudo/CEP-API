@@ -25,8 +25,22 @@ public static class TimeAnalysisEngine
         if (day > LocalDate(now))
             return new(day, null, null, null, true, ["incomplete"]);
         var result = Analyze(day, day, now, toleranceMinutes, input, true).Days[0];
-        var mondayRows = input.Where(x => x.Source == ExternalWorkforceSource.Monday && x.WorkDate == day).ToArray();
-        var vrRows = input.Where(x => x.Source == ExternalWorkforceSource.VrMais && x.WorkDate == day).ToArray();
+        return AsImportedDay(result, input.Where(x => x.WorkDate == day));
+    }
+
+    public static IReadOnlyList<TimeAnalysisDay> SummarizeImportedDays(DateOnly from, DateOnly to,
+        DateTimeOffset now, int toleranceMinutes, IEnumerable<WorkforceTimeRecord> records)
+    {
+        var input = records.Where(x => !x.IsRemoved).ToArray();
+        var byDay = input.ToLookup(x => x.WorkDate);
+        return Analyze(from, to, now, toleranceMinutes, input, true).Days
+            .Select(day => AsImportedDay(day, byDay[day.Day])).ToArray();
+    }
+
+    private static TimeAnalysisDay AsImportedDay(TimeAnalysisDay result, IEnumerable<WorkforceTimeRecord> records)
+    {
+        var mondayRows = records.Where(x => x.Source == ExternalWorkforceSource.Monday).ToArray();
+        var vrRows = records.Where(x => x.Source == ExternalWorkforceSource.VrMais);
         var monday = mondayRows.Length == 0 || mondayRows.Any(x => x.DurationSeconds is null or < 0 ||
             x.EndedAt is null || x.State == "running") ? null : result.MondaySeconds;
         // Today's punches are a stored snapshot: never infer work after their last import.
