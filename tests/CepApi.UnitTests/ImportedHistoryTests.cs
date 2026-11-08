@@ -65,6 +65,24 @@ public sealed class ImportedHistoryTests
         }
     }
 
+    [Fact]
+    public void Batch_keeps_only_selected_dates_and_preserves_future_placeholders()
+    {
+        var earlier = Day.AddDays(-2);
+        var future = Day.AddDays(2);
+        var days = TimeAnalysisEngine.SummarizeImportedDays([future, Day, earlier, Day], Now, 30,
+            [Monday("08:00", "09:00"), Vr(3600)]);
+
+        Assert.Equal(new[] { earlier, Day, future }, days.Select(x => x.Day));
+        Assert.Null(days[0].MondaySeconds);
+        Assert.Equal(3600, days[1].MondaySeconds);
+        Assert.Equal(3600, days[1].VrSeconds);
+        Assert.Equal(0, days[1].DeltaSeconds);
+        Assert.True(days[2].Partial);
+        Assert.Null(days[2].VrSeconds);
+        Assert.Equal(new[] { "incomplete" }, days[2].Issues);
+    }
+
     private static WorkforceTimeRecord Vr(int seconds) => new()
     {
         Source = ExternalWorkforceSource.VrMais, ExternalKey = "vr", WorkDate = Day,

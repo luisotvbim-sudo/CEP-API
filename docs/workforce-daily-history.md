@@ -4,7 +4,7 @@
 
 Os dias são as datas civis distintas dos registros visíveis, em ordem crescente. O filtro `source` limita registros e dias visíveis, mas os totais de cada dia usam as duas identidades da mesma pessoa. A consulta mantém o isolamento por organização e o escopo vigente de coordenador, líder e membro, inclusive quando há filtro de pessoa. O próprio usuário pode ler sua associação e histórico sem vínculo vigente com time; isso não amplia o acesso a colegas.
 
-`TimeAnalysisEngine.SummarizeImportedDay` reutiliza o motor de análise; diferencia a consulta de dados armazenados da análise com leitura atual das fontes. Retorna durações em segundos, diferença Monday − VR, parcial e motivos de indisponibilidade. Não chama fontes externas nem cria relatórios/notificações.
+`TimeAnalysisEngine.SummarizeImportedDays` prepara os registros de cada pessoa uma vez e calcula apenas as datas selecionadas. O histórico e o resumo de horas reutilizam o cálculo diário. A resposta traz durações em segundos, diferença Monday − VR, indicação de dia parcial e motivos de indisponibilidade com base nos registros importados.
 
 - Ausência de lançamento Monday não comprova cobertura: total nulo, nunca zero presumido.
 - Duração nula/negativa e cronômetro aberto impedem total Monday; não se prolonga timer importado até o instante da consulta.

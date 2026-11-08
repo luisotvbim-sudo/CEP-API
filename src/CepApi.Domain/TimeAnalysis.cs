@@ -19,22 +19,35 @@ public static class TimeAnalysisEngine
     /// extending a stored running timer up to the time of the query. This is not a
     /// fresh source consultation and does not certify synchronization coverage.</summary>
     public static TimeAnalysisDay SummarizeImportedDay(DateOnly day, DateTimeOffset now,
-        int toleranceMinutes, IEnumerable<WorkforceTimeRecord> records)
-    {
-        var input = records.Where(x => !x.IsRemoved).ToArray();
-        if (day > LocalDate(now))
-            return new(day, null, null, null, true, ["incomplete"]);
-        var result = Analyze(day, day, now, toleranceMinutes, input, true).Days[0];
-        return AsImportedDay(result, input.Where(x => x.WorkDate == day));
-    }
+        int toleranceMinutes, IEnumerable<WorkforceTimeRecord> records) =>
+        SummarizeImportedDays([day], now, toleranceMinutes, records)[0];
 
     public static IReadOnlyList<TimeAnalysisDay> SummarizeImportedDays(DateOnly from, DateOnly to,
         DateTimeOffset now, int toleranceMinutes, IEnumerable<WorkforceTimeRecord> records)
     {
+        var today = LocalDate(now);
+        ValidateRange(from, to, today);
+        return SummarizeImportedDays(DatesInRange(from, to), now, toleranceMinutes, records, today);
+    }
+
+    public static IReadOnlyList<TimeAnalysisDay> SummarizeImportedDays(IEnumerable<DateOnly> dates,
+        DateTimeOffset now, int toleranceMinutes, IEnumerable<WorkforceTimeRecord> records) =>
+        SummarizeImportedDays(dates.Distinct().Order(), now, toleranceMinutes, records, LocalDate(now));
+
+    private static IReadOnlyList<TimeAnalysisDay> SummarizeImportedDays(IEnumerable<DateOnly> dates,
+        DateTimeOffset now, int toleranceMinutes, IEnumerable<WorkforceTimeRecord> records, DateOnly today)
+    {
+        var selected = dates.ToArray();
+        var observed = selected.TakeWhile(day => day <= today).ToArray();
+        // Legacy imported history can contain future-dated records. Keep those days visible as unknown.
+        var future = selected.Skip(observed.Length)
+            .Select(day => new TimeAnalysisDay(day, null, null, null, true, ["incomplete"]));
+        if (observed.Length == 0) return future.ToArray();
+
         var input = records.Where(x => !x.IsRemoved).ToArray();
         var byDay = input.ToLookup(x => x.WorkDate);
-        return Analyze(from, to, now, toleranceMinutes, input, true).Days
-            .Select(day => AsImportedDay(day, byDay[day.Day])).ToArray();
+        return AnalyzeDays(observed, now, today, toleranceMinutes, input, true)
+            .Select(day => AsImportedDay(day, byDay[day.Day])).Concat(future).ToArray();
     }
 
     private static TimeAnalysisDay AsImportedDay(TimeAnalysisDay result, IEnumerable<WorkforceTimeRecord> records)
@@ -84,8 +97,28 @@ public static class TimeAnalysisEngine
         int toleranceMinutes, IEnumerable<WorkforceTimeRecord> records, bool sourcesComplete)
     {
         ArgumentNullException.ThrowIfNull(records);
-        if (from > to || to > LocalDate(cutoff) || to.DayNumber - from.DayNumber > 365)
+        var today = LocalDate(cutoff);
+        ValidateRange(from, to, today);
+        var days = AnalyzeDays(DatesInRange(from, to), cutoff, today, toleranceMinutes, records, sourcesComplete);
+        var vrTotal = days.All(x => x.VrSeconds.HasValue) ? days.Sum(x => x.VrSeconds) : null;
+        var mondayTotal = days.All(x => x.MondaySeconds.HasValue) ? days.Sum(x => x.MondaySeconds) : null;
+        var deltaTotal = days.All(x => x.DeltaSeconds.HasValue) ? days.Sum(x => x.DeltaSeconds) : null;
+        long? absoluteDivergence = days.All(x => x.DeltaSeconds.HasValue) ? days.Sum(x => Math.Abs(x.DeltaSeconds!.Value)) : null;
+        return new(from, to, cutoff, toleranceMinutes, days, vrTotal, mondayTotal, deltaTotal, absoluteDivergence, days.Any(x => x.Issues.Count > 0));
+    }
+
+    private static void ValidateRange(DateOnly from, DateOnly to, DateOnly today)
+    {
+        if (from > to || to > today || to.DayNumber - from.DayNumber > 365)
             throw new ArgumentOutOfRangeException(nameof(to));
+    }
+
+    private static IEnumerable<DateOnly> DatesInRange(DateOnly from, DateOnly to) =>
+        Enumerable.Range(0, to.DayNumber - from.DayNumber + 1).Select(from.AddDays);
+
+    private static List<TimeAnalysisDay> AnalyzeDays(IEnumerable<DateOnly> dates, DateTimeOffset cutoff,
+        DateOnly today, int toleranceMinutes, IEnumerable<WorkforceTimeRecord> records, bool sourcesComplete)
+    {
         if (toleranceMinutes < 0) throw new ArgumentOutOfRangeException(nameof(toleranceMinutes));
         // Snapshot retries must never count the same source session/day twice.
         var input = records.GroupBy(x => (x.Source, x.ExternalIdentityId, x.ExternalKey))
@@ -93,9 +126,8 @@ public static class TimeAnalysisEngine
             .Where(x => !x.IsRemoved).ToArray();
         var vrByDay = input.Where(x => x.Source == ExternalWorkforceSource.VrMais).ToLookup(x => x.WorkDate);
         var mondayRows = input.Where(x => x.Source == ExternalWorkforceSource.Monday).ToArray();
-        var today = LocalDate(cutoff);
         var days = new List<TimeAnalysisDay>();
-        for (var day = from; day <= to; day = day.AddDays(1))
+        foreach (var day in dates)
         {
             var issues = new HashSet<string>(StringComparer.Ordinal);
             var partial = day == today;
@@ -134,11 +166,7 @@ public static class TimeAnalysisEngine
             if (delta.HasValue && Math.Abs(delta.Value) > (long)toleranceMinutes * 60) issues.Add("above_tolerance");
             days.Add(new(day, vr, monday, delta, partial, issues.Order(StringComparer.Ordinal).ToArray()));
         }
-        var vrTotal = days.All(x => x.VrSeconds.HasValue) ? days.Sum(x => x.VrSeconds) : null;
-        var mondayTotal = days.All(x => x.MondaySeconds.HasValue) ? days.Sum(x => x.MondaySeconds) : null;
-        var deltaTotal = days.All(x => x.DeltaSeconds.HasValue) ? days.Sum(x => x.DeltaSeconds) : null;
-        long? absoluteDivergence = days.All(x => x.DeltaSeconds.HasValue) ? days.Sum(x => Math.Abs(x.DeltaSeconds!.Value)) : null;
-        return new(from, to, cutoff, toleranceMinutes, days, vrTotal, mondayTotal, deltaTotal, absoluteDivergence, days.Any(x => x.Issues.Count > 0));
+        return days;
     }
 
     private static long? VrSeconds(WorkforceTimeRecord row, DateOnly day, DateTimeOffset cutoff,
