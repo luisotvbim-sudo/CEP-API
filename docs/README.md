@@ -47,3 +47,5 @@ README, especificação, contrato aprovado e especializados foram revisados para
 ## Coordenação
 
 Trabalho entre API, Front/instalador e VM: [orquestrador](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR) e [fila de entregas](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues). Apenas referências genéricas de coordenação pertencem a este repositório; registros privados de chats/máquinas e inventário da VM permanecem no local responsável.
+
+- [Resumo de horas da coordenação](hours-summary.md): contrato do consolidado por organização, time e pessoa.

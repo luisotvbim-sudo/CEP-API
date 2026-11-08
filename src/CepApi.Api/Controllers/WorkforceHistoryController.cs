@@ -66,8 +66,8 @@ public sealed class WorkforceHistoryController(
                 .OrderBy(x => x.WorkDate).ThenBy(x => x.Source).ThenBy(x => x.StartedAt)
                 .ToArray();
             var personRecords = allRecords.Where(x => source is null || x.Source == source).Select(ToResponse).ToArray();
-            var days = personRecords.Select(x => x.WorkDate).Distinct().Order()
-                .Select(day => TimeAnalysisEngine.SummarizeImportedDay(day, now, tolerance, allRecords)).ToArray();
+            var days = TimeAnalysisEngine.SummarizeImportedDays(personRecords.Select(x => x.WorkDate),
+                now, tolerance, allRecords);
             return new WorkforcePersonHistoryResponse(person.Id, person.UserId, person.DisplayName, person.Email, personRecords, days);
         }).ToArray());
 

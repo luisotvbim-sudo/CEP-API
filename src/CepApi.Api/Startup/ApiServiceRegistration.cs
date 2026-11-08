@@ -24,6 +24,7 @@ internal static class ApiServiceRegistration
         builder.Services.AddHostedService<DesktopTelemetryRetentionService>();
         builder.Services.AddScoped<OrganizationScopeService>();
         builder.Services.AddScoped<TimeControlAccessService>();
+        builder.Services.AddScoped<HoursSummaryService>();
         builder.Services.AddControllers().AddJsonOptions(options =>
             options.JsonSerializerOptions.Converters.Add(
                 new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
@@ -47,6 +48,7 @@ internal static class ApiServiceRegistration
             options.OperationFilter<OrganizationScopeOperationFilter>();
             options.SchemaFilter<PowerActionSchemaFilter>();
             options.SchemaFilter<PersonalOverviewSchemaFilter>();
+            options.SchemaFilter<HoursSummarySchemaFilter>();
             options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 Name = "Authorization",
