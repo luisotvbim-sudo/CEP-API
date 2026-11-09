@@ -4,6 +4,8 @@ Entrada para retomada em qualquer computador. A base funcional da API publicada 
 
 ## Leia primeiro
 
+Para a branch de 19/10/2026, veja a [base de refatoração, testes e lacunas](REFATORACAO-BASE-2026-10-19.md); os registros de publicação abaixo são históricos e não identificam automaticamente o SHA produtivo atual.
+
 1. [Contexto atual](CONTEXTO-ATUAL.md): aplicação, fluxos, código e limites.
 2. [Especificação funcional](conciliacao-horas/especificacao-funcional.md): RN/RF/CA/D, implementação e requisitos planejados.
 3. [Decisões e pendências](DECISOES-PENDENCIAS.md): definições consolidadas e lacunas.

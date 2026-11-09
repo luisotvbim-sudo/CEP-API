@@ -69,6 +69,26 @@ public sealed class PowerActionTests
             TimeAnalysisEngine.ResolvePeriod(AnalysisPeriod.Daily, Cutoff), cancellation.Token));
     }
 
+    [Fact]
+    public async Task Fresh_source_timing_reports_each_source_and_a_handled_failure_without_changing_the_result()
+    {
+        var observations = new List<(ExternalWorkforceSource Source, long Milliseconds, string Outcome)>();
+        var service = new FreshTimeAnalysisService(new Clock(),
+            [new FakeTimeSource(ExternalWorkforceSource.Monday, 0),
+             new FakeTimeSource(ExternalWorkforceSource.VrMais, 0, "unavailable")]);
+        var (snapshots, states) = await service.FetchAsync([Person()],
+            TimeAnalysisEngine.ResolvePeriod(AnalysisPeriod.Daily, Cutoff), TestContext.Current.CancellationToken,
+            (source, milliseconds, outcome) => observations.Add((source, milliseconds, outcome)));
+
+        Assert.Equal(2, observations.Count);
+        Assert.Contains(observations, item => item.Source == ExternalWorkforceSource.Monday &&
+            item.Outcome == "complete" && item.Milliseconds >= 0);
+        Assert.Contains(observations, item => item.Source == ExternalWorkforceSource.VrMais &&
+            item.Outcome == "source_unavailable" && item.Milliseconds >= 0);
+        Assert.Single(snapshots);
+        Assert.Contains(states, item => item.Source == ExternalWorkforceSource.VrMais && item.Status == "incomplete");
+    }
+
     private static WorkforcePerson Person() => new()
     {
         OrganizationId = Guid.NewGuid(), DisplayName = "Test", Email = "test@example.test",

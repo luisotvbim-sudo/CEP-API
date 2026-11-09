@@ -1,6 +1,6 @@
-# Telemetria estruturada do desktop — implementação proposta (#47)
+# Telemetria estruturada do desktop
 
-Esta entrega prepara a API para o piloto manual da [Issue #45](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues/45). Código, migration e testes locais não comprovam implantação. O cliente desktop correspondente é responsabilidade do CEP-FRONT (#48). Ativação da coleta, migration de produção, backup e acesso operacional ainda exigem revisão antes do rollout.
+Atualização em 19/10/2026: a API e a migration desta telemetria foram implantadas em 08/10, após backup validado, conforme o [registro central](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/blob/main/PUBLICACAO-MSI-0.4.20-2026-10-08.md). Esse registro não prova cobertura em cada PC nem entrega final da ação de energia. A retenção e o acesso operacional devem ser conferidos na VM antes de ampliar o piloto. A implementação e os testes descritos abaixo são da entrega original da [Issue #45](https://github.com/luisotvbim-sudo/CEP-ORQUESTRADOR/issues/45); a migração e o rollback descritos abaixo são o procedimento de compatibilidade, não uma instrução para reaplicá-la.
 
 ## Contrato de ingestão
 
